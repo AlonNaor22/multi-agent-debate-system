@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+venv/
+output/*.md
+Task 4 Multi-Agent Debate System.md
