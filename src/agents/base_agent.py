@@ -1,5 +1,5 @@
 from langchain_anthropic import ChatAnthropic
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from config import MODEL_NAME, MAX_TOKENS
 
 
