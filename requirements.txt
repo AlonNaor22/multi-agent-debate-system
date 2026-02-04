@@ -8,3 +8,8 @@ rich>=13.7.0
 
 # Utilities
 python-dotenv>=1.0.0
+
+# FastAPI Backend
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+websockets>=12.0
