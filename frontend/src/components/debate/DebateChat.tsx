@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { useDebateStore } from '../../stores/debateStore';
 import { DebateMessage } from './DebateMessage';
 import { DebateProgress } from './DebateProgress';
-import { TypingIndicator } from './TypingIndicator';
 import { VotingModal } from './VotingModal';
 
 interface DebateChatProps {
@@ -11,13 +10,22 @@ interface DebateChatProps {
 }
 
 export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
-  const { topic, proStyle, conStyle, phase, messages, isTyping, currentSpeaker, isWaitingForVote } = useDebateStore();
+  const {
+    topic,
+    proStyle,
+    conStyle,
+    phase,
+    messages,
+    isWaitingForVote,
+    streamingContent,
+    streamingSpeaker,
+  } = useDebateStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or streaming updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, streamingContent]);
 
   const isFinished = phase === 'finished';
 
@@ -51,14 +59,12 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
             <DebateMessage key={index} message={message} />
           ))}
 
-          {isTyping && currentSpeaker && (
-            <div className={`flex ${
-              currentSpeaker === 'PRO' ? 'justify-start' :
-              currentSpeaker === 'CON' ? 'justify-end' :
-              'justify-center'
-            }`}>
-              <TypingIndicator speaker={currentSpeaker} />
-            </div>
+          {/* Show streaming content as it arrives */}
+          {streamingSpeaker && (
+            <StreamingMessage
+              speaker={streamingSpeaker}
+              content={streamingContent}
+            />
           )}
 
           <div ref={messagesEndRef} />
@@ -81,6 +87,79 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
 
       {/* Voting Modal */}
       {isWaitingForVote && <VotingModal onVote={onVote} />}
+    </div>
+  );
+}
+
+// Streaming message component - shows content as it's being typed
+interface StreamingMessageProps {
+  speaker: 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING';
+  content: string;
+}
+
+const speakerConfig = {
+  PRO: {
+    bg: 'bg-green-50',
+    border: 'border-green-200',
+    badge: 'bg-green-500 text-white',
+  },
+  CON: {
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    badge: 'bg-red-500 text-white',
+  },
+  MODERATOR: {
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    badge: 'bg-blue-500 text-white',
+  },
+  JUDGE: {
+    bg: 'bg-yellow-50',
+    border: 'border-yellow-300',
+    badge: 'bg-yellow-500 text-white',
+  },
+  AUDIENCE: {
+    bg: 'bg-purple-50',
+    border: 'border-purple-200',
+    badge: 'bg-purple-500 text-white',
+  },
+  SCORING: {
+    bg: 'bg-indigo-50',
+    border: 'border-indigo-200',
+    badge: 'bg-indigo-500 text-white',
+  },
+};
+
+function StreamingMessage({ speaker, content }: StreamingMessageProps) {
+  const config = speakerConfig[speaker];
+  const isCentered = ['MODERATOR', 'JUDGE', 'AUDIENCE', 'SCORING'].includes(speaker);
+
+  return (
+    <div className={`flex ${isCentered ? 'justify-center' : speaker === 'PRO' ? 'justify-start' : 'justify-end'}`}>
+      <div
+        className={`
+          max-w-2xl p-4 rounded-lg border-2
+          ${config.bg} ${config.border}
+          ${isCentered ? 'w-full max-w-3xl' : 'max-w-xl'}
+        `}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`px-2 py-1 rounded text-sm font-bold ${config.badge}`}>
+            {speaker}
+          </span>
+          <span className="text-sm text-gray-500 italic">typing...</span>
+        </div>
+        <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+          {content || (
+            <span className="inline-flex gap-1">
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </span>
+          )}
+          <span className="animate-pulse">|</span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+from typing import Generator
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from config import MODEL_NAME, MAX_TOKENS
@@ -49,3 +50,14 @@ class DebateAgent:
         })
 
         return response.content
+
+    def stream_respond(self, debate_context: str, instruction: str) -> Generator[str, None, None]:
+        """Stream a response chunk by chunk for real-time display."""
+        for chunk in self.chain.stream({
+            "debate_context": debate_context,
+            "instruction": instruction,
+            "name": self.name,
+            "role": self.role
+        }):
+            if chunk.content:
+                yield chunk.content

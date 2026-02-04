@@ -18,6 +18,11 @@ interface DebateState {
   isTyping: boolean;
   error: string | null;
 
+  // Streaming state
+  streamingContent: string;
+  streamingSpeaker: Speaker | null;
+  streamingLabel: string | null;
+
   // Actions
   setTopic: (topic: string) => void;
   setProStyle: (style: string) => void;
@@ -32,6 +37,11 @@ interface DebateState {
   setError: (error: string | null) => void;
   endDebate: () => void;
   reset: () => void;
+
+  // Streaming actions
+  startStreaming: (speaker: Speaker) => void;
+  appendStreamingChunk: (chunk: string) => void;
+  finishStreaming: (label?: string) => void;
 }
 
 const initialState = {
@@ -47,9 +57,12 @@ const initialState = {
   currentSpeaker: null,
   isTyping: false,
   error: null,
+  streamingContent: '',
+  streamingSpeaker: null,
+  streamingLabel: null,
 };
 
-export const useDebateStore = create<DebateState>((set) => ({
+export const useDebateStore = create<DebateState>((set, get) => ({
   ...initialState,
 
   setTopic: (topic) => set({ topic }),
@@ -67,6 +80,9 @@ export const useDebateStore = create<DebateState>((set) => ({
       messages: [],
       phase: null,
       error: null,
+      streamingContent: '',
+      streamingSpeaker: null,
+      streamingLabel: null,
     }),
 
   setPhase: (phase) => set({ phase }),
@@ -76,6 +92,9 @@ export const useDebateStore = create<DebateState>((set) => ({
       messages: [...state.messages, message],
       isTyping: false,
       currentSpeaker: null,
+      streamingContent: '',
+      streamingSpeaker: null,
+      streamingLabel: null,
     })),
 
   setCurrentSpeaker: (currentSpeaker) => set({ currentSpeaker }),
@@ -84,12 +103,50 @@ export const useDebateStore = create<DebateState>((set) => ({
   setError: (error) => set({ error }),
 
   endDebate: () =>
-    set({
+    set((state) => ({
       isDebating: false,
       isTyping: false,
       currentSpeaker: null,
       isWaitingForVote: false,
-    }),
+      streamingContent: '',
+      streamingSpeaker: null,
+      streamingLabel: null,
+      // Keep phase as 'finished' so the chat stays visible
+      phase: state.phase === 'finished' ? 'finished' : state.phase,
+    })),
 
   reset: () => set(initialState),
+
+  // Streaming actions
+  startStreaming: (speaker) =>
+    set({
+      streamingSpeaker: speaker,
+      streamingContent: '',
+      isTyping: true,
+      currentSpeaker: speaker,
+    }),
+
+  appendStreamingChunk: (chunk) =>
+    set((state) => ({
+      streamingContent: state.streamingContent + chunk,
+    })),
+
+  finishStreaming: (label) => {
+    const state = get();
+    if (state.streamingSpeaker && state.streamingContent) {
+      set((s) => ({
+        messages: [...s.messages, {
+          speaker: state.streamingSpeaker!,
+          content: state.streamingContent,
+          label: label,
+          phase: s.phase || 'introduction',
+        }],
+        streamingContent: '',
+        streamingSpeaker: null,
+        streamingLabel: null,
+        isTyping: false,
+        currentSpeaker: null,
+      }));
+    }
+  },
 }));

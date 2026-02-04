@@ -5,7 +5,20 @@ import { DebateSetup, DebateChat } from './components/debate';
 type Vote = 'PRO' | 'CON' | 'TIE';
 
 function App() {
-  const { isDebating, reset, setError, startDebate, setPhase, setCurrentSpeaker, setIsTyping, addMessage, setIsWaitingForVote, endDebate, phase: currentPhase } = useDebateStore();
+  const {
+    isDebating,
+    reset,
+    setError,
+    startDebate,
+    setPhase,
+    setIsWaitingForVote,
+    endDebate,
+    phase: currentPhase,
+    startStreaming,
+    appendStreamingChunk,
+    finishStreaming,
+    addMessage,
+  } = useDebateStore();
   const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -62,7 +75,12 @@ function App() {
     }
   }, [setError]);
 
-  const handleWSMessage = useCallback((message: { type: string; debate_id: string; data: Record<string, unknown> }, topic: string, proStyle: string, conStyle: string) => {
+  const handleWSMessage = useCallback((
+    message: { type: string; debate_id: string; data: Record<string, unknown> },
+    topic: string,
+    proStyle: string,
+    conStyle: string
+  ) => {
     const { type, data } = message;
 
     switch (type) {
@@ -75,24 +93,18 @@ function App() {
         break;
 
       case 'message_start':
-        setCurrentSpeaker(data.speaker as 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING');
-        setIsTyping(true);
+        startStreaming(data.speaker as 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING');
         break;
 
-      case 'message_complete': {
-        const store = useDebateStore.getState();
-        addMessage({
-          speaker: data.speaker as 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING',
-          content: data.content as string,
-          label: data.label as string | undefined,
-          phase: store.phase || 'introduction',
-        });
+      case 'message_chunk':
+        appendStreamingChunk(data.chunk as string);
         break;
-      }
+
+      case 'message_complete':
+        finishStreaming(data.label as string | undefined);
+        break;
 
       case 'vote_required':
-        setIsTyping(false);
-        setCurrentSpeaker(null);
         setIsWaitingForVote(true);
         break;
 
@@ -115,7 +127,7 @@ function App() {
         setError(data.message as string);
         break;
     }
-  }, [startDebate, setPhase, setCurrentSpeaker, setIsTyping, addMessage, setIsWaitingForVote, endDebate, setError]);
+  }, [startDebate, setPhase, startStreaming, appendStreamingChunk, finishStreaming, setIsWaitingForVote, addMessage, endDebate, setError]);
 
   const handleVote = useCallback((vote: Vote) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -132,7 +144,8 @@ function App() {
     reset();
   }, [reset]);
 
-  // Show setup page if not debating, show chat if debating or finished
+  // Show setup page if not debating and phase is not finished
+  // Show chat if debating OR if debate has finished (so user can review)
   const showChat = isDebating || currentPhase === 'finished';
 
   return (

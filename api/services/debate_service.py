@@ -11,6 +11,14 @@ from api.schemas.debate import DebatePhase, Speaker, WSMessageType
 # Load environment variables
 load_dotenv()
 
+# Word limits for different response types
+WORD_LIMIT_INTRO = 150
+WORD_LIMIT_OPENING = 250
+WORD_LIMIT_REBUTTAL = 200
+WORD_LIMIT_CLOSING = 200
+WORD_LIMIT_VERDICT = 300
+WORD_LIMIT_SCORING = 400
+
 
 class DebateSession:
     """Represents an active debate session."""
@@ -88,6 +96,65 @@ class DebateService:
             session.vote = vote
             session.vote_event.set()
 
+    async def _stream_agent_response(
+        self,
+        session: DebateSession,
+        agent: DebateAgent,
+        instruction: str,
+        speaker: Speaker,
+        label: Optional[str] = None
+    ) -> AsyncGenerator[dict, None]:
+        """Stream an agent's response chunk by chunk."""
+        yield {
+            "type": WSMessageType.MESSAGE_START,
+            "debate_id": session.debate_id,
+            "data": {"speaker": speaker.value}
+        }
+
+        full_content = ""
+
+        def stream_generator():
+            return agent.stream_respond(session.get_transcript_text(), instruction)
+
+        # Run the streaming in a thread and yield chunks
+        import queue
+        import threading
+
+        chunk_queue: queue.Queue = queue.Queue()
+        done_event = threading.Event()
+
+        def stream_worker():
+            try:
+                for chunk in stream_generator():
+                    chunk_queue.put(chunk)
+            finally:
+                done_event.set()
+
+        thread = threading.Thread(target=stream_worker)
+        thread.start()
+
+        while not done_event.is_set() or not chunk_queue.empty():
+            try:
+                chunk = chunk_queue.get(timeout=0.1)
+                full_content += chunk
+                yield {
+                    "type": WSMessageType.MESSAGE_CHUNK,
+                    "debate_id": session.debate_id,
+                    "data": {"speaker": speaker.value, "chunk": chunk}
+                }
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+
+        thread.join()
+
+        session.add_to_transcript(speaker.value, full_content)
+
+        yield {
+            "type": WSMessageType.MESSAGE_COMPLETE,
+            "debate_id": session.debate_id,
+            "data": {"speaker": speaker.value, "content": full_content, "label": label}
+        }
+
     async def run_debate(self, session: DebateSession) -> AsyncGenerator[dict, None]:
         """Run a debate and yield events for WebSocket streaming."""
 
@@ -110,24 +177,15 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.MODERATOR.value}
-        }
-
-        intro = await asyncio.to_thread(
-            session.judge_agent.respond,
-            "",
-            f"Introduce the debate topic: '{session.topic}'. Welcome the debaters and explain the format briefly."
+        intro_instruction = (
+            f"Introduce the debate topic: '{session.topic}'. "
+            f"Welcome the debaters and explain the format briefly. "
+            f"Keep your introduction concise (under {WORD_LIMIT_INTRO} words)."
         )
-        session.add_to_transcript("MODERATOR", intro)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.MODERATOR.value, "content": intro}
-        }
+        async for event in self._stream_agent_response(
+            session, session.judge_agent, intro_instruction, Speaker.MODERATOR
+        ):
+            yield event
 
         # --- PHASE 2: Opening Statements ---
         session.phase = DebatePhase.OPENING_PRO
@@ -137,24 +195,14 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.PRO.value}
-        }
-
-        pro_opening = await asyncio.to_thread(
-            session.pro_agent.respond,
-            session.get_transcript_text(),
-            "Deliver your opening statement. Present your 3 strongest arguments FOR the topic."
+        pro_opening_instruction = (
+            f"Deliver your opening statement. Present your 3 strongest arguments FOR the topic. "
+            f"Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
         )
-        session.add_to_transcript("PRO", pro_opening)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.PRO.value, "content": pro_opening, "label": "Opening Statement"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.pro_agent, pro_opening_instruction, Speaker.PRO, "Opening Statement"
+        ):
+            yield event
 
         session.phase = DebatePhase.OPENING_CON
         yield {
@@ -163,24 +211,14 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.CON.value}
-        }
-
-        con_opening = await asyncio.to_thread(
-            session.con_agent.respond,
-            session.get_transcript_text(),
-            "Deliver your opening statement. Present your 3 strongest arguments AGAINST the topic."
+        con_opening_instruction = (
+            f"Deliver your opening statement. Present your 3 strongest arguments AGAINST the topic. "
+            f"Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
         )
-        session.add_to_transcript("CON", con_opening)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.CON.value, "content": con_opening, "label": "Opening Statement"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.con_agent, con_opening_instruction, Speaker.CON, "Opening Statement"
+        ):
+            yield event
 
         # --- PHASE 3: Rebuttal Rounds ---
         session.phase = DebatePhase.REBUTTAL
@@ -191,43 +229,25 @@ class DebateService:
         }
 
         for round_num in range(1, NUM_REBUTTAL_ROUNDS + 1):
-            yield {
-                "type": WSMessageType.MESSAGE_START,
-                "debate_id": session.debate_id,
-                "data": {"speaker": Speaker.PRO.value}
-            }
-
-            pro_rebuttal = await asyncio.to_thread(
-                session.pro_agent.respond,
-                session.get_transcript_text(),
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. Counter their points and strengthen your position."
+            pro_rebuttal_instruction = (
+                f"Rebuttal round {round_num}: Respond to your opponent's arguments. "
+                f"Counter their points and strengthen your position. "
+                f"Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
             )
-            session.add_to_transcript("PRO", pro_rebuttal)
+            async for event in self._stream_agent_response(
+                session, session.pro_agent, pro_rebuttal_instruction, Speaker.PRO, f"Rebuttal {round_num}"
+            ):
+                yield event
 
-            yield {
-                "type": WSMessageType.MESSAGE_COMPLETE,
-                "debate_id": session.debate_id,
-                "data": {"speaker": Speaker.PRO.value, "content": pro_rebuttal, "label": f"Rebuttal {round_num}"}
-            }
-
-            yield {
-                "type": WSMessageType.MESSAGE_START,
-                "debate_id": session.debate_id,
-                "data": {"speaker": Speaker.CON.value}
-            }
-
-            con_rebuttal = await asyncio.to_thread(
-                session.con_agent.respond,
-                session.get_transcript_text(),
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. Counter their points and strengthen your position."
+            con_rebuttal_instruction = (
+                f"Rebuttal round {round_num}: Respond to your opponent's arguments. "
+                f"Counter their points and strengthen your position. "
+                f"Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
             )
-            session.add_to_transcript("CON", con_rebuttal)
-
-            yield {
-                "type": WSMessageType.MESSAGE_COMPLETE,
-                "debate_id": session.debate_id,
-                "data": {"speaker": Speaker.CON.value, "content": con_rebuttal, "label": f"Rebuttal {round_num}"}
-            }
+            async for event in self._stream_agent_response(
+                session, session.con_agent, con_rebuttal_instruction, Speaker.CON, f"Rebuttal {round_num}"
+            ):
+                yield event
 
         # --- Audience Vote ---
         yield {
@@ -259,24 +279,14 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.PRO.value}
-        }
-
-        pro_closing = await asyncio.to_thread(
-            session.pro_agent.respond,
-            session.get_transcript_text(),
-            "Deliver your closing statement. Summarize your strongest points and make a final appeal."
+        pro_closing_instruction = (
+            f"Deliver your closing statement. Summarize your strongest points and make a final appeal. "
+            f"Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
         )
-        session.add_to_transcript("PRO", pro_closing)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.PRO.value, "content": pro_closing, "label": "Closing Statement"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.pro_agent, pro_closing_instruction, Speaker.PRO, "Closing Statement"
+        ):
+            yield event
 
         session.phase = DebatePhase.CLOSING_CON
         yield {
@@ -285,24 +295,14 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.CON.value}
-        }
-
-        con_closing = await asyncio.to_thread(
-            session.con_agent.respond,
-            session.get_transcript_text(),
-            "Deliver your closing statement. Summarize your strongest points and make a final appeal."
+        con_closing_instruction = (
+            f"Deliver your closing statement. Summarize your strongest points and make a final appeal. "
+            f"Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
         )
-        session.add_to_transcript("CON", con_closing)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.CON.value, "content": con_closing, "label": "Closing Statement"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.con_agent, con_closing_instruction, Speaker.CON, "Closing Statement"
+        ):
+            yield event
 
         # --- PHASE 5: Judge's Verdict ---
         session.phase = DebatePhase.VERDICT
@@ -312,29 +312,19 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.JUDGE.value}
-        }
-
-        verdict = await asyncio.to_thread(
-            session.judge_agent.respond,
-            session.get_transcript_text(),
-            "Deliver your final verdict. Include:\n"
-            "1. Summary of strongest arguments from each side\n"
-            "2. Weaknesses or missed opportunities from each side\n"
-            "3. Your reasoning for the decision\n"
-            "4. Scores for each debater (1-10)\n"
-            "5. Declaration of winner (or tie)"
+        verdict_instruction = (
+            f"Deliver your final verdict. Include:\n"
+            f"1. Summary of strongest arguments from each side\n"
+            f"2. Weaknesses or missed opportunities from each side\n"
+            f"3. Your reasoning for the decision\n"
+            f"4. Scores for each debater (1-10)\n"
+            f"5. Declaration of winner (or tie)\n"
+            f"Keep it thorough but concise (under {WORD_LIMIT_VERDICT} words)."
         )
-        session.add_to_transcript("JUDGE", verdict)
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.JUDGE.value, "content": verdict, "label": "Final Verdict"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.judge_agent, verdict_instruction, Speaker.JUDGE, "Final Verdict"
+        ):
+            yield event
 
         # --- PHASE 6: Scoring ---
         session.phase = DebatePhase.SCORING
@@ -344,44 +334,36 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        yield {
-            "type": WSMessageType.MESSAGE_START,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.SCORING.value}
-        }
-
         scoring_instruction = (
-            "Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
-            "Format your response as:\n\n"
-            "PRO ARGUMENTS:\n"
-            "1. [Argument summary] — Score: X/10 — Reason: [why this score]\n"
-            "2. ...\n\n"
-            "CON ARGUMENTS:\n"
-            "1. [Argument summary] — Score: X/10 — Reason: [why this score]\n"
-            "2. ...\n\n"
-            "OVERALL:\n"
-            "- Pro total average: X/10\n"
-            "- Con total average: X/10\n"
-            "- Strongest single argument: [which one and why]\n"
-            "- Weakest single argument: [which one and why]"
+            f"Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
+            f"Format your response as:\n\n"
+            f"PRO ARGUMENTS:\n"
+            f"1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
+            f"2. ...\n\n"
+            f"CON ARGUMENTS:\n"
+            f"1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
+            f"2. ...\n\n"
+            f"OVERALL:\n"
+            f"- Pro total average: X/10\n"
+            f"- Con total average: X/10\n"
+            f"- Strongest single argument: [which one]\n"
+            f"- Weakest single argument: [which one]\n"
+            f"Keep it concise (under {WORD_LIMIT_SCORING} words)."
         )
-
-        scores = await asyncio.to_thread(
-            session.judge_agent.respond,
-            session.get_transcript_text(),
-            scoring_instruction
-        )
-        session.add_to_transcript("SCORING", scores)
-        session.argument_scores = scores
-
-        yield {
-            "type": WSMessageType.MESSAGE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {"speaker": Speaker.SCORING.value, "content": scores, "label": "Argument Scores"}
-        }
+        async for event in self._stream_agent_response(
+            session, session.judge_agent, scoring_instruction, Speaker.SCORING, "Argument Scores"
+        ):
+            yield event
+        session.argument_scores = session.transcript[-1]["content"]
 
         # --- Finished ---
         session.phase = DebatePhase.FINISHED
+        yield {
+            "type": WSMessageType.PHASE_CHANGE,
+            "debate_id": session.debate_id,
+            "data": {"phase": session.phase.value}
+        }
+
         yield {
             "type": WSMessageType.DEBATE_COMPLETE,
             "debate_id": session.debate_id,
