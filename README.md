@@ -119,6 +119,17 @@ Messages stream in real-time like ChatGPT, and you can vote on who's winning mid
 └── requirements.txt
 ```
 
+## Running Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+42 tests covering the debate controller, prompt styles, config values, and API schemas — all run without hitting the Anthropic API.
+
+---
+
 ## CLI Mode (Alternative)
 
 You can also run debates in the terminal without the web UI:
