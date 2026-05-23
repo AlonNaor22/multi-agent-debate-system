@@ -1,3 +1,5 @@
+[![CI](https://github.com/AlonNaor22/multi-agent-debate-system/actions/workflows/ci.yml/badge.svg)](https://github.com/AlonNaor22/multi-agent-debate-system/actions/workflows/ci.yml)
+
 # Multi-Agent Debate System
 
 A multi-agent system where AI agents powered by Claude debate any topic. Features a React web UI with real-time streaming, audience voting, and argument scoring.
