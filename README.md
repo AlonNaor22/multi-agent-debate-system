@@ -55,6 +55,20 @@ Go to **http://localhost:5173** in your browser.
 
 ---
 
+## Docker
+
+Run the full stack (backend + frontend) with one command:
+
+```bash
+docker compose up --build
+```
+
+- Open http://localhost:5173 in your browser once both services start.
+- Make sure your .env file exists with ANTHROPIC_API_KEY set before running.
+- The backend API is available at http://localhost:8000.
+
+---
+
 ## How It Works
 
 The system uses LangChain to orchestrate three separate Claude instances, each with a distinct persona:
