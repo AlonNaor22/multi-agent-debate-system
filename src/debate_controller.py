@@ -1,8 +1,19 @@
 import time
+from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from config import NUM_REBUTTAL_ROUNDS
 from src.debate_enums import DebatePhase
+from src.agents.base_agent import DebateAgent
+from src.prompts import (
+    INSTRUCTION_INTRO,
+    INSTRUCTION_PRO_OPENING,
+    INSTRUCTION_CON_OPENING,
+    INSTRUCTION_REBUTTAL,
+    INSTRUCTION_CLOSING,
+    INSTRUCTION_VERDICT,
+    INSTRUCTION_SCORING,
+)
 
 
 class DebateController:
@@ -19,13 +30,14 @@ class DebateController:
     the shared transcript to each one so they can respond to each other.
     """
 
-    def __init__(self, topic, pro_agent, con_agent, judge_agent):
+    def __init__(self, topic: str, pro_agent: DebateAgent, con_agent: DebateAgent, judge_agent: DebateAgent):
         self.topic = topic
         self.pro = pro_agent
         self.con = con_agent
         self.judge = judge_agent
         self.transcript = []
         self.phase = DebatePhase.INTRODUCTION
+        self.argument_scores: Optional[str] = None
         self.console = Console()
 
     def add_to_transcript(self, speaker: str, content: str):
@@ -48,7 +60,7 @@ class DebateController:
             text += f"[{entry['speaker']}]: {entry['content']}\n\n"
         return text
 
-    def timed_respond(self, agent, context: str, instruction: str) -> tuple:
+    def timed_respond(self, agent: DebateAgent, context: str, instruction: str) -> tuple[str, float]:
         """Call agent.respond() and measure how long it takes.
 
         Returns (response_text, seconds_elapsed).
@@ -59,7 +71,7 @@ class DebateController:
         elapsed = time.time() - start
         return response, elapsed
 
-    def display_message(self, speaker: str, content: str, style: str, elapsed: float = None):
+    def display_message(self, speaker: str, content: str, style: str, elapsed: Optional[float] = None):
         """Display a message with Rich formatting."""
         subtitle = f"[{elapsed:.1f}s]" if elapsed else None
         self.console.print()
@@ -77,7 +89,7 @@ class DebateController:
         self.phase = DebatePhase.INTRODUCTION
         intro, t = self.timed_respond(
             self.judge, "",
-            f"Introduce the debate topic: '{self.topic}'. Welcome the debaters and explain the format briefly."
+            INSTRUCTION_INTRO.format(topic=self.topic)
         )
         self.add_to_transcript("MODERATOR", intro)
         self.display_message("MODERATOR", intro, "blue", t)
@@ -86,7 +98,7 @@ class DebateController:
         self.phase = DebatePhase.OPENING_PRO
         pro_opening, t = self.timed_respond(
             self.pro, self.get_transcript_text(),
-            "Deliver your opening statement. Present your 3 strongest arguments FOR the topic."
+            INSTRUCTION_PRO_OPENING
         )
         self.add_to_transcript("PRO", pro_opening)
         self.display_message("PRO - Opening Statement", pro_opening, "green", t)
@@ -94,7 +106,7 @@ class DebateController:
         self.phase = DebatePhase.OPENING_CON
         con_opening, t = self.timed_respond(
             self.con, self.get_transcript_text(),
-            "Deliver your opening statement. Present your 3 strongest arguments AGAINST the topic."
+            INSTRUCTION_CON_OPENING
         )
         self.add_to_transcript("CON", con_opening)
         self.display_message("CON - Opening Statement", con_opening, "red", t)
@@ -105,14 +117,14 @@ class DebateController:
 
             pro_rebuttal, t = self.timed_respond(
                 self.pro, self.get_transcript_text(),
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. Counter their points and strengthen your position."
+                INSTRUCTION_REBUTTAL.format(round_num=round_num)
             )
             self.add_to_transcript("PRO", pro_rebuttal)
             self.display_message(f"PRO - Rebuttal {round_num}", pro_rebuttal, "green", t)
 
             con_rebuttal, t = self.timed_respond(
                 self.con, self.get_transcript_text(),
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. Counter their points and strengthen your position."
+                INSTRUCTION_REBUTTAL.format(round_num=round_num)
             )
             self.add_to_transcript("CON", con_rebuttal)
             self.display_message(f"CON - Rebuttal {round_num}", con_rebuttal, "red", t)
@@ -137,7 +149,7 @@ class DebateController:
         self.phase = DebatePhase.CLOSING_PRO
         pro_closing, t = self.timed_respond(
             self.pro, self.get_transcript_text(),
-            "Deliver your closing statement. Summarize your strongest points and make a final appeal."
+            INSTRUCTION_CLOSING
         )
         self.add_to_transcript("PRO", pro_closing)
         self.display_message("PRO - Closing Statement", pro_closing, "green", t)
@@ -145,7 +157,7 @@ class DebateController:
         self.phase = DebatePhase.CLOSING_CON
         con_closing, t = self.timed_respond(
             self.con, self.get_transcript_text(),
-            "Deliver your closing statement. Summarize your strongest points and make a final appeal."
+            INSTRUCTION_CLOSING
         )
         self.add_to_transcript("CON", con_closing)
         self.display_message("CON - Closing Statement", con_closing, "red", t)
@@ -154,12 +166,7 @@ class DebateController:
         self.phase = DebatePhase.VERDICT
         verdict, t = self.timed_respond(
             self.judge, self.get_transcript_text(),
-            "Deliver your final verdict. Include:\n"
-            "1. Summary of strongest arguments from each side\n"
-            "2. Weaknesses or missed opportunities from each side\n"
-            "3. Your reasoning for the decision\n"
-            "4. Scores for each debater (1-10)\n"
-            "5. Declaration of winner (or tie)"
+            INSTRUCTION_VERDICT
         )
         self.add_to_transcript("JUDGE", verdict)
         self.display_message("JUDGE - Final Verdict", verdict, "yellow", t)
@@ -178,23 +185,7 @@ class DebateController:
         The chain doesn't know or care that the debate is over; it just processes
         whatever instruction we give it against the transcript context.
         """
-        scoring_instruction = (
-            "Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
-            "Format your response as:\n\n"
-            "PRO ARGUMENTS:\n"
-            "1. [Argument summary] — Score: X/10 — Reason: [why this score]\n"
-            "2. ...\n\n"
-            "CON ARGUMENTS:\n"
-            "1. [Argument summary] — Score: X/10 — Reason: [why this score]\n"
-            "2. ...\n\n"
-            "OVERALL:\n"
-            "- Pro total average: X/10\n"
-            "- Con total average: X/10\n"
-            "- Strongest single argument: [which one and why]\n"
-            "- Weakest single argument: [which one and why]"
-        )
-
-        scores = self.judge.respond(self.get_transcript_text(), scoring_instruction)
+        scores = self.judge.respond(self.get_transcript_text(), INSTRUCTION_SCORING)
         self.add_to_transcript("SCORING", scores)
         self.display_message("ARGUMENT SCORES", scores, "magenta")
         return scores

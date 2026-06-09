@@ -1,9 +1,20 @@
 import asyncio
+import queue
+import threading
 import uuid
 from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
 
 from src.agents.base_agent import build_agents
+from src.prompts import (
+    INSTRUCTION_INTRO,
+    INSTRUCTION_PRO_OPENING,
+    INSTRUCTION_CON_OPENING,
+    INSTRUCTION_REBUTTAL,
+    INSTRUCTION_CLOSING,
+    INSTRUCTION_VERDICT,
+    INSTRUCTION_SCORING,
+)
 from config import NUM_REBUTTAL_ROUNDS
 from api.schemas.debate import DebatePhase, Speaker, WSMessageType
 
@@ -17,6 +28,11 @@ WORD_LIMIT_REBUTTAL = 200
 WORD_LIMIT_CLOSING = 200
 WORD_LIMIT_VERDICT = 300
 WORD_LIMIT_SCORING = 400
+
+# Streaming / timing constants
+VOTE_TIMEOUT_SECONDS = 300
+STREAM_QUEUE_TIMEOUT = 0.1
+STREAM_POLL_INTERVAL = 0.05
 
 
 class DebateSession:
@@ -96,10 +112,6 @@ class DebateService:
         def stream_generator():
             return agent.stream_respond(session.get_transcript_text(), instruction)
 
-        # Run the streaming in a thread and yield chunks
-        import queue
-        import threading
-
         chunk_queue: queue.Queue = queue.Queue()
         done_event = threading.Event()
 
@@ -115,7 +127,7 @@ class DebateService:
 
         while not done_event.is_set() or not chunk_queue.empty():
             try:
-                chunk = chunk_queue.get(timeout=0.1)
+                chunk = chunk_queue.get(timeout=STREAM_QUEUE_TIMEOUT)
                 full_content += chunk
                 yield {
                     "type": WSMessageType.MESSAGE_CHUNK,
@@ -123,7 +135,7 @@ class DebateService:
                     "data": {"speaker": speaker.value, "chunk": chunk}
                 }
             except queue.Empty:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(STREAM_POLL_INTERVAL)
 
         thread.join()
 
@@ -158,9 +170,8 @@ class DebateService:
         }
 
         intro_instruction = (
-            f"Introduce the debate topic: '{session.topic}'. "
-            f"Welcome the debaters and explain the format briefly. "
-            f"Keep your introduction concise (under {WORD_LIMIT_INTRO} words)."
+            INSTRUCTION_INTRO.format(topic=session.topic)
+            + f" Keep your introduction concise (under {WORD_LIMIT_INTRO} words)."
         )
         async for event in self._stream_agent_response(
             session, session.judge_agent, intro_instruction, Speaker.MODERATOR
@@ -176,8 +187,8 @@ class DebateService:
         }
 
         pro_opening_instruction = (
-            f"Deliver your opening statement. Present your 3 strongest arguments FOR the topic. "
-            f"Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
+            INSTRUCTION_PRO_OPENING
+            + f" Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
         )
         async for event in self._stream_agent_response(
             session, session.pro_agent, pro_opening_instruction, Speaker.PRO, "Opening Statement"
@@ -192,8 +203,8 @@ class DebateService:
         }
 
         con_opening_instruction = (
-            f"Deliver your opening statement. Present your 3 strongest arguments AGAINST the topic. "
-            f"Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
+            INSTRUCTION_CON_OPENING
+            + f" Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
         )
         async for event in self._stream_agent_response(
             session, session.con_agent, con_opening_instruction, Speaker.CON, "Opening Statement"
@@ -209,21 +220,16 @@ class DebateService:
         }
 
         for round_num in range(1, NUM_REBUTTAL_ROUNDS + 1):
-            pro_rebuttal_instruction = (
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. "
-                f"Counter their points and strengthen your position. "
-                f"Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
+            rebuttal_instruction = (
+                INSTRUCTION_REBUTTAL.format(round_num=round_num)
+                + f" Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
             )
             async for event in self._stream_agent_response(
-                session, session.pro_agent, pro_rebuttal_instruction, Speaker.PRO, f"Rebuttal {round_num}"
+                session, session.pro_agent, rebuttal_instruction, Speaker.PRO, f"Rebuttal {round_num}"
             ):
                 yield event
 
-            con_rebuttal_instruction = (
-                f"Rebuttal round {round_num}: Respond to your opponent's arguments. "
-                f"Counter their points and strengthen your position. "
-                f"Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
-            )
+            con_rebuttal_instruction = rebuttal_instruction
             async for event in self._stream_agent_response(
                 session, session.con_agent, con_rebuttal_instruction, Speaker.CON, f"Rebuttal {round_num}"
             ):
@@ -238,7 +244,7 @@ class DebateService:
 
         # Wait for vote with timeout
         try:
-            await asyncio.wait_for(session.vote_event.wait(), timeout=300)
+            await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             session.vote = "TIE"
 
@@ -259,12 +265,12 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        pro_closing_instruction = (
-            f"Deliver your closing statement. Summarize your strongest points and make a final appeal. "
-            f"Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
+        closing_instruction = (
+            INSTRUCTION_CLOSING
+            + f" Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
         )
         async for event in self._stream_agent_response(
-            session, session.pro_agent, pro_closing_instruction, Speaker.PRO, "Closing Statement"
+            session, session.pro_agent, closing_instruction, Speaker.PRO, "Closing Statement"
         ):
             yield event
 
@@ -275,10 +281,7 @@ class DebateService:
             "data": {"phase": session.phase.value}
         }
 
-        con_closing_instruction = (
-            f"Deliver your closing statement. Summarize your strongest points and make a final appeal. "
-            f"Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
-        )
+        con_closing_instruction = closing_instruction
         async for event in self._stream_agent_response(
             session, session.con_agent, con_closing_instruction, Speaker.CON, "Closing Statement"
         ):
@@ -293,13 +296,8 @@ class DebateService:
         }
 
         verdict_instruction = (
-            f"Deliver your final verdict. Include:\n"
-            f"1. Summary of strongest arguments from each side\n"
-            f"2. Weaknesses or missed opportunities from each side\n"
-            f"3. Your reasoning for the decision\n"
-            f"4. Scores for each debater (1-10)\n"
-            f"5. Declaration of winner (or tie)\n"
-            f"Keep it thorough but concise (under {WORD_LIMIT_VERDICT} words)."
+            INSTRUCTION_VERDICT
+            + f"\nKeep it thorough but concise (under {WORD_LIMIT_VERDICT} words)."
         )
         async for event in self._stream_agent_response(
             session, session.judge_agent, verdict_instruction, Speaker.JUDGE, "Final Verdict"
@@ -315,20 +313,8 @@ class DebateService:
         }
 
         scoring_instruction = (
-            f"Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
-            f"Format your response as:\n\n"
-            f"PRO ARGUMENTS:\n"
-            f"1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
-            f"2. ...\n\n"
-            f"CON ARGUMENTS:\n"
-            f"1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
-            f"2. ...\n\n"
-            f"OVERALL:\n"
-            f"- Pro total average: X/10\n"
-            f"- Con total average: X/10\n"
-            f"- Strongest single argument: [which one]\n"
-            f"- Weakest single argument: [which one]\n"
-            f"Keep it concise (under {WORD_LIMIT_SCORING} words)."
+            INSTRUCTION_SCORING
+            + f"\nKeep it concise (under {WORD_LIMIT_SCORING} words)."
         )
         async for event in self._stream_agent_response(
             session, session.judge_agent, scoring_instruction, Speaker.SCORING, "Argument Scores"

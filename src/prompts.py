@@ -113,6 +113,55 @@ Your goal: Make the opponent's position look ridiculous while making solid point
 PRO_AGENT_PROMPT = PRO_STYLES["passionate"]
 CON_AGENT_PROMPT = CON_STYLES["passionate"]
 
+# --- Turn instructions (used by both CLI and web service) ---
+# Templates: call .format(topic=...) or .format(round_num=...) where needed.
+
+INSTRUCTION_INTRO = (
+    "Introduce the debate topic: '{topic}'. Welcome the debaters and explain the format briefly."
+)
+
+INSTRUCTION_PRO_OPENING = (
+    "Deliver your opening statement. Present your 3 strongest arguments FOR the topic."
+)
+
+INSTRUCTION_CON_OPENING = (
+    "Deliver your opening statement. Present your 3 strongest arguments AGAINST the topic."
+)
+
+INSTRUCTION_REBUTTAL = (
+    "Rebuttal round {round_num}: Respond to your opponent's arguments. "
+    "Counter their points and strengthen your position."
+)
+
+INSTRUCTION_CLOSING = (
+    "Deliver your closing statement. Summarize your strongest points and make a final appeal."
+)
+
+INSTRUCTION_VERDICT = (
+    "Deliver your final verdict. Include:\n"
+    "1. Summary of strongest arguments from each side\n"
+    "2. Weaknesses or missed opportunities from each side\n"
+    "3. Your reasoning for the decision\n"
+    "4. Scores for each debater (1-10)\n"
+    "5. Declaration of winner (or tie)"
+)
+
+INSTRUCTION_SCORING = (
+    "Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
+    "Format your response as:\n\n"
+    "PRO ARGUMENTS:\n"
+    "1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
+    "2. ...\n\n"
+    "CON ARGUMENTS:\n"
+    "1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
+    "2. ...\n\n"
+    "OVERALL:\n"
+    "- Pro total average: X/10\n"
+    "- Con total average: X/10\n"
+    "- Strongest single argument: [which one and why]\n"
+    "- Weakest single argument: [which one and why]"
+)
+
 JUDGE_AGENT_PROMPT = """You are an impartial judge and moderator for this debate.
 
 Your characteristics:
