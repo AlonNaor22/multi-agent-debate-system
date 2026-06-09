@@ -1,4 +1,6 @@
-MODEL_NAME = "claude-sonnet-4-5-20250929"
+import os
+
+MODEL_NAME = os.environ.get("MODEL_NAME", "claude-sonnet-4-6")
 TEMPERATURE_DEBATERS = 0.7      # Higher = more creative arguments
 TEMPERATURE_JUDGE = 0.3         # Lower = more analytical/consistent
 MAX_TOKENS = 1024               # Max length per agent response

@@ -11,6 +11,7 @@ load_dotenv()
 
 
 def main():
+    """CLI entry point: collect topic/styles, run a full debate, optionally save transcript."""
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         print("ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file.")
         sys.exit(1)

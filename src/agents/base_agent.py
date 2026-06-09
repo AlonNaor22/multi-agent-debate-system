@@ -5,6 +5,14 @@ from config import MODEL_NAME, MAX_TOKENS
 
 
 class DebateAgent:
+    """A single LLM-backed participant in the debate (Pro, Con, or Judge).
+
+    Each agent owns its own ChatAnthropic instance and prompt chain so it
+    maintains an independent temperature and system persona throughout the
+    debate. Agents do not hold conversation history — the controller passes
+    the full shared transcript on every turn.
+    """
+
     def __init__(self, name: str, role: str, system_prompt: str, temperature: float = 0.7):
         self.name = name
         self.role = role

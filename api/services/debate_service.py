@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import queue
 import threading
 import uuid
 from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 from src.agents.base_agent import build_agents
 from src.prompts import (
@@ -79,6 +82,7 @@ class DebateService:
         debate_id = str(uuid.uuid4())
         session = DebateSession(debate_id, topic, pro_style, con_style)
         self.sessions[debate_id] = session
+        logger.info("Debate created: id=%s topic=%r", debate_id, topic)
         return session
 
     def get_session(self, debate_id: str) -> Optional[DebateSession]:
@@ -149,6 +153,7 @@ class DebateService:
 
     async def run_debate(self, session: DebateSession) -> AsyncGenerator[dict, None]:
         """Run a debate and yield events for WebSocket streaming."""
+        logger.info("Debate started: id=%s", session.debate_id)
 
         # Yield debate started
         yield {
@@ -338,6 +343,12 @@ class DebateService:
                 "argument_scores": session.argument_scores
             }
         }
+
+        # Clean up the finished session to prevent unbounded memory growth.
+        # Note: this store is per-process — it does not survive across multiple
+        # uvicorn workers; run with a single worker or use a shared store.
+        self.sessions.pop(session.debate_id, None)
+        logger.info("Debate complete, session evicted: id=%s", session.debate_id)
 
 
 # Global instance
