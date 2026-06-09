@@ -164,6 +164,8 @@ python main.py
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/` | GET | API root / version info |
+| `/health` | GET | Health check (returns `{"status":"healthy"}`) |
 | `/api/debates` | POST | Create a new debate |
 | `/api/config/styles` | GET | Get available personality styles |
 | `/ws/debates/{id}` | WS | WebSocket for real-time streaming |
