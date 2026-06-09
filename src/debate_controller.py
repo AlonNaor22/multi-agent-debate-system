@@ -1,20 +1,8 @@
 import time
-from enum import Enum
 from rich.console import Console
 from rich.panel import Panel
 from config import NUM_REBUTTAL_ROUNDS
-
-
-class DebatePhase(Enum):
-    """The debate moves through these phases in order."""
-    INTRODUCTION = "introduction"
-    OPENING_PRO = "opening_pro"
-    OPENING_CON = "opening_con"
-    REBUTTAL = "rebuttal"
-    CLOSING_PRO = "closing_pro"
-    CLOSING_CON = "closing_con"
-    VERDICT = "verdict"
-    FINISHED = "finished"
+from src.debate_enums import DebatePhase
 
 
 class DebateController:

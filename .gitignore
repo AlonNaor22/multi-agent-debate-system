@@ -4,6 +4,7 @@ __pycache__/
 venv/
 output/*.md
 Task 4 Multi-Agent Debate System.md
+TODO.md
 
 # Claude Code temporary files
 tmpclaude-*
