@@ -43,7 +43,3 @@ class WSMessage(BaseModel):
     type: WSMessageType
     debate_id: str
     data: dict
-
-
-class VoteMessage(BaseModel):
-    vote: str  # "PRO", "CON", or "TIE"

@@ -21,7 +21,6 @@ interface DebateState {
   // Streaming state
   streamingContent: string;
   streamingSpeaker: Speaker | null;
-  streamingLabel: string | null;
 
   // Actions
   setTopic: (topic: string) => void;
@@ -59,7 +58,6 @@ const initialState = {
   error: null,
   streamingContent: '',
   streamingSpeaker: null,
-  streamingLabel: null,
 };
 
 export const useDebateStore = create<DebateState>((set, get) => ({
@@ -82,7 +80,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       error: null,
       streamingContent: '',
       streamingSpeaker: null,
-      streamingLabel: null,
     }),
 
   setPhase: (phase) => set({ phase }),
@@ -94,7 +91,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       currentSpeaker: null,
       streamingContent: '',
       streamingSpeaker: null,
-      streamingLabel: null,
     })),
 
   setCurrentSpeaker: (currentSpeaker) => set({ currentSpeaker }),
@@ -110,7 +106,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       isWaitingForVote: false,
       streamingContent: '',
       streamingSpeaker: null,
-      streamingLabel: null,
       // Keep phase as 'finished' so the chat stays visible
       phase: state.phase === 'finished' ? 'finished' : state.phase,
     })),
@@ -143,8 +138,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         }],
         streamingContent: '',
         streamingSpeaker: null,
-        streamingLabel: null,
-        isTyping: false,
+          isTyping: false,
         currentSpeaker: null,
       }));
     }

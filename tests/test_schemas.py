@@ -5,7 +5,6 @@ from api.schemas.debate import (
     WSMessageType,
     DebateCreateRequest,
     WSMessage,
-    VoteMessage,
 )
 
 
@@ -63,12 +62,3 @@ class TestWSMessage:
         assert msg.data == {"phase": "introduction"}
 
 
-class TestVoteMessage:
-    def test_accepts_pro_vote(self):
-        assert VoteMessage(vote="PRO").vote == "PRO"
-
-    def test_accepts_con_vote(self):
-        assert VoteMessage(vote="CON").vote == "CON"
-
-    def test_accepts_tie_vote(self):
-        assert VoteMessage(vote="TIE").vote == "TIE"
