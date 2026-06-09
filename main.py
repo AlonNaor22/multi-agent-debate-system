@@ -1,10 +1,9 @@
 import os
 import json
 from dotenv import load_dotenv
-from src.agents.base_agent import DebateAgent
+from src.agents.base_agent import build_agents
 from src.debate_controller import DebateController
-from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT
-from config import TEMPERATURE_DEBATERS, TEMPERATURE_JUDGE, AVAILABLE_STYLES, DEFAULT_PRO_STYLE, DEFAULT_CON_STYLE
+from config import AVAILABLE_STYLES, DEFAULT_PRO_STYLE, DEFAULT_CON_STYLE
 
 # Load the API key from .env file into environment variables
 load_dotenv()
@@ -34,26 +33,7 @@ def main():
     print("-" * 60)
 
     # Create 3 agents — same model, different personas via system prompts
-    pro_agent = DebateAgent(
-        name="Pro",
-        role="arguing FOR the topic",
-        system_prompt=PRO_STYLES[pro_style],
-        temperature=TEMPERATURE_DEBATERS
-    )
-
-    con_agent = DebateAgent(
-        name="Con",
-        role="arguing AGAINST the topic",
-        system_prompt=CON_STYLES[con_style],
-        temperature=TEMPERATURE_DEBATERS
-    )
-
-    judge_agent = DebateAgent(
-        name="Judge",
-        role="moderator and judge",
-        system_prompt=JUDGE_AGENT_PROMPT,
-        temperature=TEMPERATURE_JUDGE
-    )
+    pro_agent, con_agent, judge_agent = build_agents(pro_style, con_style)
 
     # The controller orchestrates the agents
     controller = DebateController(topic, pro_agent, con_agent, judge_agent)

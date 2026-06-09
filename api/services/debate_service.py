@@ -3,9 +3,8 @@ import uuid
 from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
 
-from src.agents.base_agent import DebateAgent
-from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT
-from config import TEMPERATURE_DEBATERS, TEMPERATURE_JUDGE, NUM_REBUTTAL_ROUNDS
+from src.agents.base_agent import build_agents
+from config import NUM_REBUTTAL_ROUNDS
 from api.schemas.debate import DebatePhase, Speaker, WSMessageType
 
 # Load environment variables
@@ -35,26 +34,7 @@ class DebateSession:
         self.argument_scores: Optional[str] = None
 
         # Create agents
-        self.pro_agent = DebateAgent(
-            name="Pro",
-            role="arguing FOR the topic",
-            system_prompt=PRO_STYLES[pro_style],
-            temperature=TEMPERATURE_DEBATERS
-        )
-
-        self.con_agent = DebateAgent(
-            name="Con",
-            role="arguing AGAINST the topic",
-            system_prompt=CON_STYLES[con_style],
-            temperature=TEMPERATURE_DEBATERS
-        )
-
-        self.judge_agent = DebateAgent(
-            name="Judge",
-            role="moderator and judge",
-            system_prompt=JUDGE_AGENT_PROMPT,
-            temperature=TEMPERATURE_JUDGE
-        )
+        self.pro_agent, self.con_agent, self.judge_agent = build_agents(pro_style, con_style)
 
     def add_to_transcript(self, speaker: str, content: str):
         """Record what was said and by whom."""

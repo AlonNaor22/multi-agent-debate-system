@@ -61,3 +61,29 @@ class DebateAgent:
         }):
             if chunk.content:
                 yield chunk.content
+
+
+def build_agents(pro_style: str, con_style: str) -> tuple["DebateAgent", "DebateAgent", "DebateAgent"]:
+    """Return (pro_agent, con_agent, judge_agent) configured for a debate."""
+    from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT
+    from config import TEMPERATURE_DEBATERS, TEMPERATURE_JUDGE
+
+    pro = DebateAgent(
+        name="Pro",
+        role="arguing FOR the topic",
+        system_prompt=PRO_STYLES[pro_style],
+        temperature=TEMPERATURE_DEBATERS,
+    )
+    con = DebateAgent(
+        name="Con",
+        role="arguing AGAINST the topic",
+        system_prompt=CON_STYLES[con_style],
+        temperature=TEMPERATURE_DEBATERS,
+    )
+    judge = DebateAgent(
+        name="Judge",
+        role="moderator and judge",
+        system_prompt=JUDGE_AGENT_PROMPT,
+        temperature=TEMPERATURE_JUDGE,
+    )
+    return pro, con, judge
