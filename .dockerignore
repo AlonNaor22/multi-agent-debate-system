@@ -1,0 +1,11 @@
+venv/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.env
+tests/
+TODO.md
+Task 4 Multi-Agent Debate System.md
+frontend/node_modules/
+frontend/dist/

@@ -1,8 +1,13 @@
 import json
+import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api.services.debate_service import debate_service
 from api.schemas.debate import WSMessageType
+
+logger = logging.getLogger(__name__)
+
+VALID_VOTES = {"PRO", "CON", "TIE"}
 
 router = APIRouter()
 
@@ -36,20 +41,22 @@ async def debate_websocket(websocket: WebSocket, debate_id: str):
             # If vote is required, wait for client response
             if event["type"] == WSMessageType.VOTE_REQUIRED:
                 try:
-                    # Wait for vote from client
                     vote_data = await websocket.receive_json()
                     if vote_data.get("type") == "vote":
-                        debate_service.submit_vote(debate_id, vote_data.get("vote", "TIE"))
+                        raw = vote_data.get("vote", "TIE")
+                        debate_service.submit_vote(debate_id, raw if raw in VALID_VOTES else "TIE")
+                except (WebSocketDisconnect, json.JSONDecodeError):
+                    debate_service.submit_vote(debate_id, "TIE")
                 except Exception:
-                    # Default to TIE if no vote received
+                    logger.exception("Unexpected error reading vote for debate_id=%s", debate_id)
                     debate_service.submit_vote(debate_id, "TIE")
 
     except WebSocketDisconnect:
-        # Client disconnected
         pass
-    except Exception as e:
+    except Exception:
+        logger.exception("Unhandled error during debate websocket for debate_id=%s", debate_id)
         await websocket.send_json({
             "type": WSMessageType.ERROR.value,
             "debate_id": debate_id,
-            "data": {"message": str(e)}
+            "data": {"message": "An unexpected error occurred. Please try again."}
         })

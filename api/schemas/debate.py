@@ -1,13 +1,20 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from src.debate_enums import DebatePhase, Speaker
 
 
 class DebateCreateRequest(BaseModel):
-    topic: str
+    topic: str = Field(..., min_length=1, max_length=500)
     pro_style: str = "passionate"
     con_style: str = "passionate"
+
+    @field_validator("topic")
+    @classmethod
+    def topic_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("topic must not be blank")
+        return v.strip()
 
 
 class DebateCreateResponse(BaseModel):

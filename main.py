@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 from dotenv import load_dotenv
 from src.agents.base_agent import build_agents
@@ -10,6 +11,10 @@ load_dotenv()
 
 
 def main():
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        print("ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file.")
+        sys.exit(1)
+
     print("=" * 60)
     print("        MULTI-AGENT DEBATE SYSTEM")
     print("=" * 60)
@@ -49,9 +54,12 @@ def main():
 
         if format_choice in ("m", "b", ""):
             md_path = f"output/{base_name}.md"
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(controller.get_transcript_text())
-            print(f"Saved Markdown to {md_path}")
+            try:
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.write(controller.get_transcript_text())
+                print(f"Saved Markdown to {md_path}")
+            except OSError as e:
+                print(f"Failed to save Markdown: {e}")
 
         if format_choice in ("j", "b"):
             json_path = f"output/{base_name}.json"
@@ -60,11 +68,14 @@ def main():
                 "pro_style": pro_style,
                 "con_style": con_style,
                 "transcript": controller.transcript,
-                "argument_scores": controller.argument_scores
+                "argument_scores": controller.argument_scores,
             }
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(debate_data, f, indent=2, ensure_ascii=False)
-            print(f"Saved JSON to {json_path}")
+            try:
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(debate_data, f, indent=2, ensure_ascii=False)
+                print(f"Saved JSON to {json_path}")
+            except OSError as e:
+                print(f"Failed to save JSON: {e}")
 
 
 if __name__ == "__main__":
