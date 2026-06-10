@@ -8,29 +8,21 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-from src.agents.base_agent import build_agents
-from src.prompts import (
-    INSTRUCTION_INTRO,
-    INSTRUCTION_PRO_OPENING,
-    INSTRUCTION_CON_OPENING,
-    INSTRUCTION_REBUTTAL,
-    INSTRUCTION_CLOSING,
-    INSTRUCTION_VERDICT,
-    INSTRUCTION_SCORING,
+from src.agents.base_agent import DebateAgent, build_agents
+from src.debate_engine import (
+    DebateState,
+    DebateEngine,
+    PhaseChange,
+    Turn,
+    Vote,
+    DEFAULT_WORD_LIMITS,
+    format_audience_vote,
 )
 from config import NUM_REBUTTAL_ROUNDS
-from api.schemas.debate import DebatePhase, Speaker, WSMessageType
+from api.schemas.debate import Speaker, WSMessageType
 
 # Load environment variables
 load_dotenv()
-
-# Word limits for different response types
-WORD_LIMIT_INTRO = 150
-WORD_LIMIT_OPENING = 250
-WORD_LIMIT_REBUTTAL = 200
-WORD_LIMIT_CLOSING = 200
-WORD_LIMIT_VERDICT = 300
-WORD_LIMIT_SCORING = 400
 
 # Streaming / timing constants
 VOTE_TIMEOUT_SECONDS = 300
@@ -38,37 +30,25 @@ STREAM_QUEUE_TIMEOUT = 0.1
 STREAM_POLL_INTERVAL = 0.05
 
 
-class DebateSession:
-    """Represents an active debate session."""
+class DebateSession(DebateState):
+    """Represents an active debate session.
+
+    Inherits the transcript and phase handling from :class:`DebateState`, and
+    adds the web-specific bits: an id, the chosen styles, and the audience-vote
+    synchronisation primitives. The debate flow itself comes from the shared
+    :class:`DebateEngine` — see :meth:`DebateService.run_debate`.
+    """
 
     def __init__(self, debate_id: str, topic: str, pro_style: str, con_style: str):
+        super().__init__(topic)
         self.debate_id = debate_id
-        self.topic = topic
         self.pro_style = pro_style
         self.con_style = con_style
-        self.transcript: list[dict] = []
-        self.phase = DebatePhase.INTRODUCTION
         self.vote: Optional[str] = None
         self.vote_event = asyncio.Event()
-        self.argument_scores: Optional[str] = None
 
         # Create agents
         self.pro_agent, self.con_agent, self.judge_agent = build_agents(pro_style, con_style)
-
-    def add_to_transcript(self, speaker: str, content: str):
-        """Record what was said and by whom."""
-        self.transcript.append({
-            "speaker": speaker,
-            "content": content,
-            "phase": self.phase.value
-        })
-
-    def get_transcript_text(self) -> str:
-        """Build the full debate transcript as a string."""
-        text = f"DEBATE TOPIC: {self.topic}\n\n"
-        for entry in self.transcript:
-            text += f"[{entry['speaker']}]: {entry['content']}\n\n"
-        return text
 
 
 class DebateService:
@@ -152,7 +132,14 @@ class DebateService:
         }
 
     async def run_debate(self, session: DebateSession) -> AsyncGenerator[dict, None]:
-        """Run a debate and yield events for WebSocket streaming."""
+        """Run a debate and yield events for WebSocket streaming.
+
+        The phase/turn ordering comes from the shared :class:`DebateEngine` (the
+        same one the CLI uses); this method only decides *how* to execute each
+        event — streaming agent turns token-by-token and waiting for the audience
+        vote over the socket. ``DEFAULT_WORD_LIMITS`` keeps the per-phase word
+        caps the web UI has always used.
+        """
         logger.info("Debate started: id=%s", session.debate_id)
 
         # Yield debate started
@@ -166,175 +153,56 @@ class DebateService:
             }
         }
 
-        # --- PHASE 1: Introduction ---
-        session.phase = DebatePhase.INTRODUCTION
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
-        intro_instruction = (
-            INSTRUCTION_INTRO.format(topic=session.topic)
-            + f" Keep your introduction concise (under {WORD_LIMIT_INTRO} words)."
+        engine = DebateEngine(
+            session.topic,
+            session.pro_agent,
+            session.con_agent,
+            session.judge_agent,
+            num_rebuttal_rounds=NUM_REBUTTAL_ROUNDS,
+            word_limits=DEFAULT_WORD_LIMITS,
         )
-        async for event in self._stream_agent_response(
-            session, session.judge_agent, intro_instruction, Speaker.MODERATOR
-        ):
-            yield event
 
-        # --- PHASE 2: Opening Statements ---
-        session.phase = DebatePhase.OPENING_PRO
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
+        for event in engine.events():
+            if isinstance(event, PhaseChange):
+                session.phase = event.phase
+                yield {
+                    "type": WSMessageType.PHASE_CHANGE,
+                    "debate_id": session.debate_id,
+                    "data": {"phase": session.phase.value}
+                }
 
-        pro_opening_instruction = (
-            INSTRUCTION_PRO_OPENING
-            + f" Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
-        )
-        async for event in self._stream_agent_response(
-            session, session.pro_agent, pro_opening_instruction, Speaker.PRO, "Opening Statement"
-        ):
-            yield event
+            elif isinstance(event, Turn):
+                async for ws_event in self._stream_agent_response(
+                    session, event.agent, event.instruction, event.speaker, event.label
+                ):
+                    yield ws_event
+                if event.speaker == Speaker.SCORING:
+                    session.argument_scores = session.transcript[-1]["content"]
 
-        session.phase = DebatePhase.OPENING_CON
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
+            elif isinstance(event, Vote):
+                yield {
+                    "type": WSMessageType.VOTE_REQUIRED,
+                    "debate_id": session.debate_id,
+                    "data": {"message": "Who is winning so far?"}
+                }
 
-        con_opening_instruction = (
-            INSTRUCTION_CON_OPENING
-            + f" Be persuasive but concise (under {WORD_LIMIT_OPENING} words)."
-        )
-        async for event in self._stream_agent_response(
-            session, session.con_agent, con_opening_instruction, Speaker.CON, "Opening Statement"
-        ):
-            yield event
+                # Wait for vote with timeout
+                try:
+                    await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    session.vote = "TIE"
 
-        # --- PHASE 3: Rebuttal Rounds ---
-        session.phase = DebatePhase.REBUTTAL
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
+                vote_text = format_audience_vote(session.vote)
+                session.add_to_transcript("AUDIENCE", vote_text)
 
-        for round_num in range(1, NUM_REBUTTAL_ROUNDS + 1):
-            rebuttal_instruction = (
-                INSTRUCTION_REBUTTAL.format(round_num=round_num)
-                + f" Be focused and concise (under {WORD_LIMIT_REBUTTAL} words)."
-            )
-            async for event in self._stream_agent_response(
-                session, session.pro_agent, rebuttal_instruction, Speaker.PRO, f"Rebuttal {round_num}"
-            ):
-                yield event
+                yield {
+                    "type": WSMessageType.VOTE_RECEIVED,
+                    "debate_id": session.debate_id,
+                    "data": {"vote": session.vote, "message": vote_text}
+                }
 
-            con_rebuttal_instruction = rebuttal_instruction
-            async for event in self._stream_agent_response(
-                session, session.con_agent, con_rebuttal_instruction, Speaker.CON, f"Rebuttal {round_num}"
-            ):
-                yield event
-
-        # --- Audience Vote ---
-        yield {
-            "type": WSMessageType.VOTE_REQUIRED,
-            "debate_id": session.debate_id,
-            "data": {"message": "Who is winning so far?"}
-        }
-
-        # Wait for vote with timeout
-        try:
-            await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
-            session.vote = "TIE"
-
-        vote_text = f"Audience vote: {session.vote} is winning."
-        session.add_to_transcript("AUDIENCE", vote_text)
-
-        yield {
-            "type": WSMessageType.VOTE_RECEIVED,
-            "debate_id": session.debate_id,
-            "data": {"vote": session.vote, "message": vote_text}
-        }
-
-        # --- PHASE 4: Closing Statements ---
-        session.phase = DebatePhase.CLOSING_PRO
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
-        closing_instruction = (
-            INSTRUCTION_CLOSING
-            + f" Be impactful but concise (under {WORD_LIMIT_CLOSING} words)."
-        )
-        async for event in self._stream_agent_response(
-            session, session.pro_agent, closing_instruction, Speaker.PRO, "Closing Statement"
-        ):
-            yield event
-
-        session.phase = DebatePhase.CLOSING_CON
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
-        con_closing_instruction = closing_instruction
-        async for event in self._stream_agent_response(
-            session, session.con_agent, con_closing_instruction, Speaker.CON, "Closing Statement"
-        ):
-            yield event
-
-        # --- PHASE 5: Judge's Verdict ---
-        session.phase = DebatePhase.VERDICT
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
-        verdict_instruction = (
-            INSTRUCTION_VERDICT
-            + f"\nKeep it thorough but concise (under {WORD_LIMIT_VERDICT} words)."
-        )
-        async for event in self._stream_agent_response(
-            session, session.judge_agent, verdict_instruction, Speaker.JUDGE, "Final Verdict"
-        ):
-            yield event
-
-        # --- PHASE 6: Scoring ---
-        session.phase = DebatePhase.SCORING
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
-        scoring_instruction = (
-            INSTRUCTION_SCORING
-            + f"\nKeep it concise (under {WORD_LIMIT_SCORING} words)."
-        )
-        async for event in self._stream_agent_response(
-            session, session.judge_agent, scoring_instruction, Speaker.SCORING, "Argument Scores"
-        ):
-            yield event
-        session.argument_scores = session.transcript[-1]["content"]
-
-        # --- Finished ---
-        session.phase = DebatePhase.FINISHED
-        yield {
-            "type": WSMessageType.PHASE_CHANGE,
-            "debate_id": session.debate_id,
-            "data": {"phase": session.phase.value}
-        }
-
+        # Debate finished — the engine's final PhaseChange already moved the
+        # session to FINISHED (and emitted the phase_change above).
         yield {
             "type": WSMessageType.DEBATE_COMPLETE,
             "debate_id": session.debate_id,

@@ -71,9 +71,10 @@ class TestRunDebate:
         phases = [e["phase"] for e in controller.transcript]
         # Introduction must come first
         assert phases[0] == DebatePhase.INTRODUCTION.value
-        # The last entry (SCORING) is recorded while phase==FINISHED; all
-        # entries before it should use a debate-active phase
-        assert phases[-1] == DebatePhase.FINISHED.value
+        # The last entry is the argument scoring, recorded under the SCORING
+        # phase (the controller then advances to FINISHED with no further turn).
+        assert phases[-1] == DebatePhase.SCORING.value
+        assert controller.phase == DebatePhase.FINISHED
         assert DebatePhase.VERDICT.value in phases
 
     def test_phase_ends_as_finished(self, controller):

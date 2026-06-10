@@ -3,62 +3,48 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from config import NUM_REBUTTAL_ROUNDS
-from src.debate_enums import DebatePhase
+from src.debate_enums import DebatePhase, Speaker
 from src.agents.base_agent import DebateAgent
-from src.prompts import (
-    INSTRUCTION_INTRO,
-    INSTRUCTION_PRO_OPENING,
-    INSTRUCTION_CON_OPENING,
-    INSTRUCTION_REBUTTAL,
-    INSTRUCTION_CLOSING,
-    INSTRUCTION_VERDICT,
-    INSTRUCTION_SCORING,
+from src.debate_engine import (
+    DebateState,
+    DebateEngine,
+    PhaseChange,
+    Turn,
+    Vote,
+    format_audience_vote,
 )
 
 
-class DebateController:
-    """
-    The orchestrator of the multi-agent system.
+class DebateController(DebateState):
+    """The synchronous (CLI) orchestrator of the multi-agent system.
 
-    This is NOT an agent itself — it's the "director" that decides:
-    - WHICH agent speaks next (turn-taking)
-    - WHAT instruction each agent receives
-    - WHAT context each agent can see (the transcript so far)
+    This is NOT an agent itself — it's the "director" that decides WHICH agent
+    speaks next, WHAT instruction each receives, and WHAT context each can see.
+    That ordering now lives in the shared :class:`DebateEngine`; this class just
+    *consumes* the engine's events, running each agent synchronously and
+    rendering the result with Rich. The streaming web service consumes the very
+    same engine, which is what stops the CLI and web flows from drifting apart.
 
-    This is what makes it a MULTI-agent system vs. just 3 separate chatbots.
-    The agents don't talk to each other directly — the controller passes
-    the shared transcript to each one so they can respond to each other.
+    The agents don't talk to each other directly — the controller passes the
+    shared transcript (inherited from :class:`DebateState`) to each one so they
+    can respond to what came before.
     """
+
+    # Rich panel colour per speaker.
+    _SPEAKER_STYLES = {
+        Speaker.MODERATOR: "blue",
+        Speaker.PRO: "green",
+        Speaker.CON: "red",
+        Speaker.JUDGE: "yellow",
+        Speaker.SCORING: "magenta",
+    }
 
     def __init__(self, topic: str, pro_agent: DebateAgent, con_agent: DebateAgent, judge_agent: DebateAgent):
-        self.topic = topic
+        super().__init__(topic)
         self.pro = pro_agent
         self.con = con_agent
         self.judge = judge_agent
-        self.transcript = []
-        self.phase = DebatePhase.INTRODUCTION
-        self.argument_scores: Optional[str] = None
         self.console = Console()
-
-    def add_to_transcript(self, speaker: str, content: str):
-        """Record what was said and by whom."""
-        self.transcript.append({
-            "speaker": speaker,
-            "content": content,
-            "phase": self.phase.value
-        })
-
-    def get_transcript_text(self) -> str:
-        """Build the full debate transcript as a string.
-
-        This is what gets passed to each agent as 'debate_context'.
-        Every agent sees the FULL history — that's how they know
-        what the other agents said and can respond to it.
-        """
-        text = f"DEBATE TOPIC: {self.topic}\n\n"
-        for entry in self.transcript:
-            text += f"[{entry['speaker']}]: {entry['content']}\n\n"
-        return text
 
     def timed_respond(self, agent: DebateAgent, context: str, instruction: str) -> tuple[str, float]:
         """Call agent.respond() and measure how long it takes.
@@ -82,54 +68,53 @@ class DebateController:
             style=style
         ))
 
+    def _title(self, speaker: Speaker, label: Optional[str]) -> str:
+        """Build the Rich panel title for a turn."""
+        if speaker == Speaker.SCORING:
+            return "ARGUMENT SCORES"
+        if label:
+            return f"{speaker.value} - {label}"
+        return speaker.value
+
     def run_debate(self):
-        """Execute the full debate — this is the main loop."""
+        """Execute the full debate by consuming the shared DebateEngine.
 
-        # --- PHASE 1: Introduction ---
-        self.phase = DebatePhase.INTRODUCTION
-        intro, t = self.timed_respond(
-            self.judge, "",
-            INSTRUCTION_INTRO.format(topic=self.topic)
+        ``word_limits=None`` keeps the CLI on the original, unconstrained
+        instructions. ``NUM_REBUTTAL_ROUNDS`` is read here (not baked into the
+        engine) so tests can patch it on this module.
+        """
+        engine = DebateEngine(
+            self.topic,
+            self.pro,
+            self.con,
+            self.judge,
+            num_rebuttal_rounds=NUM_REBUTTAL_ROUNDS,
+            word_limits=None,
         )
-        self.add_to_transcript("MODERATOR", intro)
-        self.display_message("MODERATOR", intro, "blue", t)
 
-        # --- PHASE 2: Opening Statements ---
-        self.phase = DebatePhase.OPENING_PRO
-        pro_opening, t = self.timed_respond(
-            self.pro, self.get_transcript_text(),
-            INSTRUCTION_PRO_OPENING
-        )
-        self.add_to_transcript("PRO", pro_opening)
-        self.display_message("PRO - Opening Statement", pro_opening, "green", t)
+        for event in engine.events():
+            if isinstance(event, PhaseChange):
+                self.phase = event.phase
+            elif isinstance(event, Turn):
+                response, elapsed = self.timed_respond(
+                    event.agent, self.get_transcript_text(), event.instruction
+                )
+                self.add_to_transcript(event.speaker.value, response)
+                self.display_message(
+                    self._title(event.speaker, event.label),
+                    response,
+                    self._SPEAKER_STYLES.get(event.speaker, "white"),
+                    elapsed,
+                )
+                if event.speaker == Speaker.SCORING:
+                    self.argument_scores = response
+            elif isinstance(event, Vote):
+                self._collect_vote()
 
-        self.phase = DebatePhase.OPENING_CON
-        con_opening, t = self.timed_respond(
-            self.con, self.get_transcript_text(),
-            INSTRUCTION_CON_OPENING
-        )
-        self.add_to_transcript("CON", con_opening)
-        self.display_message("CON - Opening Statement", con_opening, "red", t)
+        return self.transcript
 
-        # --- PHASE 3: Rebuttal Rounds ---
-        self.phase = DebatePhase.REBUTTAL
-        for round_num in range(1, NUM_REBUTTAL_ROUNDS + 1):
-
-            pro_rebuttal, t = self.timed_respond(
-                self.pro, self.get_transcript_text(),
-                INSTRUCTION_REBUTTAL.format(round_num=round_num)
-            )
-            self.add_to_transcript("PRO", pro_rebuttal)
-            self.display_message(f"PRO - Rebuttal {round_num}", pro_rebuttal, "green", t)
-
-            con_rebuttal, t = self.timed_respond(
-                self.con, self.get_transcript_text(),
-                INSTRUCTION_REBUTTAL.format(round_num=round_num)
-            )
-            self.add_to_transcript("CON", con_rebuttal)
-            self.display_message(f"CON - Rebuttal {round_num}", con_rebuttal, "red", t)
-
-        # --- Audience Vote (between rebuttals and closing) ---
+    def _collect_vote(self):
+        """Prompt the human audience for an interim vote and record it."""
         self.console.print()
         self.console.print(Panel(
             "Who is winning so far?\n\n"
@@ -141,51 +126,6 @@ class DebateController:
         ))
         vote = input("Your vote (1/2/3): ").strip()
         vote_map = {"1": "PRO", "2": "CON", "3": "TIE"}
-        vote_text = f"Audience vote: {vote_map.get(vote, 'TIE')} is winning."
+        vote_text = format_audience_vote(vote_map.get(vote, "TIE"))
         self.add_to_transcript("AUDIENCE", vote_text)
         self.console.print(f"  Recorded: {vote_text}\n")
-
-        # --- PHASE 4: Closing Statements ---
-        self.phase = DebatePhase.CLOSING_PRO
-        pro_closing, t = self.timed_respond(
-            self.pro, self.get_transcript_text(),
-            INSTRUCTION_CLOSING
-        )
-        self.add_to_transcript("PRO", pro_closing)
-        self.display_message("PRO - Closing Statement", pro_closing, "green", t)
-
-        self.phase = DebatePhase.CLOSING_CON
-        con_closing, t = self.timed_respond(
-            self.con, self.get_transcript_text(),
-            INSTRUCTION_CLOSING
-        )
-        self.add_to_transcript("CON", con_closing)
-        self.display_message("CON - Closing Statement", con_closing, "red", t)
-
-        # --- PHASE 5: Judge's Verdict ---
-        self.phase = DebatePhase.VERDICT
-        verdict, t = self.timed_respond(
-            self.judge, self.get_transcript_text(),
-            INSTRUCTION_VERDICT
-        )
-        self.add_to_transcript("JUDGE", verdict)
-        self.display_message("JUDGE - Final Verdict", verdict, "yellow", t)
-
-        self.phase = DebatePhase.FINISHED
-
-        # Score individual arguments
-        self.argument_scores = self.score_arguments()
-
-        return self.transcript
-
-    def score_arguments(self) -> str:
-        """Ask the judge to score individual arguments from the debate.
-
-        This reuses the same judge chain — we just pass a different instruction.
-        The chain doesn't know or care that the debate is over; it just processes
-        whatever instruction we give it against the transcript context.
-        """
-        scores = self.judge.respond(self.get_transcript_text(), INSTRUCTION_SCORING)
-        self.add_to_transcript("SCORING", scores)
-        self.display_message("ARGUMENT SCORES", scores, "magenta")
-        return scores

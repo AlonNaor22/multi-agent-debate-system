@@ -114,7 +114,7 @@ Messages stream in real-time like ChatGPT, and you can vote on who's winning mid
 │   ├── schemas/
 │   │   └── debate.py            # Pydantic models
 │   └── services/
-│       └── debate_service.py    # Debate orchestration
+│       └── debate_service.py    # Streaming consumer of the debate engine
 │
 ├── frontend/                    # React app
 │   ├── src/
@@ -128,7 +128,8 @@ Messages stream in real-time like ChatGPT, and you can vote on who's winning mid
 │   ├── agents/
 │   │   └── base_agent.py        # DebateAgent class
 │   ├── prompts.py               # Personality system prompts
-│   └── debate_controller.py     # CLI orchestration
+│   ├── debate_engine.py         # Shared debate flow (single source of truth)
+│   └── debate_controller.py     # Synchronous CLI consumer of the engine
 │
 ├── main.py                      # CLI entry point
 ├── config.py                    # Model settings
