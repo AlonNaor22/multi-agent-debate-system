@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-from src.agents.base_agent import DebateAgent, build_agents
+from src.agents.base_agent import DebateAgent, AgentError, build_agents
 from src.debate_engine import (
     DebateState,
     DebateEngine,
@@ -98,11 +98,18 @@ class DebateService:
 
         chunk_queue: queue.Queue = queue.Queue()
         done_event = threading.Event()
+        worker_error: list[BaseException] = []
 
         def stream_worker():
+            # Runs in a background thread. Capture any failure (e.g. AgentError
+            # from a transient API error) so it can be re-raised on the async
+            # side — an unhandled exception here would otherwise die silently in
+            # the thread and leave the message looking like it ended normally.
             try:
                 for chunk in stream_generator():
                     chunk_queue.put(chunk)
+            except BaseException as e:  # noqa: BLE001 - re-raised below
+                worker_error.append(e)
             finally:
                 done_event.set()
 
@@ -122,6 +129,11 @@ class DebateService:
                 await asyncio.sleep(STREAM_POLL_INTERVAL)
 
         thread.join()
+
+        # Surface a streaming failure to run_debate, which turns it into a clean
+        # error event. Don't record a partial turn or send MESSAGE_COMPLETE.
+        if worker_error:
+            raise worker_error[0]
 
         session.add_to_transcript(speaker.value, full_content)
 
@@ -162,61 +174,76 @@ class DebateService:
             word_limits=DEFAULT_WORD_LIMITS,
         )
 
-        for event in engine.events():
-            if isinstance(event, PhaseChange):
-                session.phase = event.phase
-                yield {
-                    "type": WSMessageType.PHASE_CHANGE,
-                    "debate_id": session.debate_id,
-                    "data": {"phase": session.phase.value}
+        try:
+            for event in engine.events():
+                if isinstance(event, PhaseChange):
+                    session.phase = event.phase
+                    yield {
+                        "type": WSMessageType.PHASE_CHANGE,
+                        "debate_id": session.debate_id,
+                        "data": {"phase": session.phase.value}
+                    }
+
+                elif isinstance(event, Turn):
+                    async for ws_event in self._stream_agent_response(
+                        session, event.agent, event.instruction, event.speaker, event.label
+                    ):
+                        yield ws_event
+                    if event.speaker == Speaker.SCORING:
+                        session.argument_scores = session.transcript[-1]["content"]
+
+                elif isinstance(event, Vote):
+                    yield {
+                        "type": WSMessageType.VOTE_REQUIRED,
+                        "debate_id": session.debate_id,
+                        "data": {"message": "Who is winning so far?"}
+                    }
+
+                    # Wait for vote with timeout
+                    try:
+                        await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
+                    except asyncio.TimeoutError:
+                        session.vote = "TIE"
+
+                    vote_text = format_audience_vote(session.vote)
+                    session.add_to_transcript("AUDIENCE", vote_text)
+
+                    yield {
+                        "type": WSMessageType.VOTE_RECEIVED,
+                        "debate_id": session.debate_id,
+                        "data": {"vote": session.vote, "message": vote_text}
+                    }
+
+            # Debate finished — the engine's final PhaseChange already moved the
+            # session to FINISHED (and emitted the phase_change above).
+            yield {
+                "type": WSMessageType.DEBATE_COMPLETE,
+                "debate_id": session.debate_id,
+                "data": {
+                    "transcript": session.transcript,
+                    "argument_scores": session.argument_scores
                 }
-
-            elif isinstance(event, Turn):
-                async for ws_event in self._stream_agent_response(
-                    session, event.agent, event.instruction, event.speaker, event.label
-                ):
-                    yield ws_event
-                if event.speaker == Speaker.SCORING:
-                    session.argument_scores = session.transcript[-1]["content"]
-
-            elif isinstance(event, Vote):
-                yield {
-                    "type": WSMessageType.VOTE_REQUIRED,
-                    "debate_id": session.debate_id,
-                    "data": {"message": "Who is winning so far?"}
-                }
-
-                # Wait for vote with timeout
-                try:
-                    await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
-                except asyncio.TimeoutError:
-                    session.vote = "TIE"
-
-                vote_text = format_audience_vote(session.vote)
-                session.add_to_transcript("AUDIENCE", vote_text)
-
-                yield {
-                    "type": WSMessageType.VOTE_RECEIVED,
-                    "debate_id": session.debate_id,
-                    "data": {"vote": session.vote, "message": vote_text}
-                }
-
-        # Debate finished — the engine's final PhaseChange already moved the
-        # session to FINISHED (and emitted the phase_change above).
-        yield {
-            "type": WSMessageType.DEBATE_COMPLETE,
-            "debate_id": session.debate_id,
-            "data": {
-                "transcript": session.transcript,
-                "argument_scores": session.argument_scores
             }
-        }
+            logger.info("Debate complete: id=%s", session.debate_id)
 
-        # Clean up the finished session to prevent unbounded memory growth.
-        # Note: this store is per-process — it does not survive across multiple
-        # uvicorn workers; run with a single worker or use a shared store.
-        self.sessions.pop(session.debate_id, None)
-        logger.info("Debate complete, session evicted: id=%s", session.debate_id)
+        except AgentError:
+            # A transient LLM failure interrupted the debate. Log the detail
+            # server-side and send the client a clean, generic error event —
+            # never a raw exception string.
+            logger.exception("Debate failed (AI service error): id=%s", session.debate_id)
+            yield {
+                "type": WSMessageType.ERROR,
+                "debate_id": session.debate_id,
+                "data": {"message": "The AI service is temporarily unavailable. Please try again."}
+            }
+
+        finally:
+            # Clean up the session to prevent unbounded memory growth, whether
+            # the debate completed or errored out. Note: this store is
+            # per-process — it does not survive across multiple uvicorn workers;
+            # run with a single worker or use a shared store.
+            self.sessions.pop(session.debate_id, None)
+            logger.info("Session evicted: id=%s", session.debate_id)
 
 
 # Global instance

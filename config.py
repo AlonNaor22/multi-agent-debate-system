@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     temperature_judge: float = 0.3
     max_tokens: int = 1024
     num_rebuttal_rounds: int = 2
+    # Resilience for the LLM calls (see src/agents/base_agent.py).
+    # request_timeout is seconds per request; max_retries is how many times the
+    # Anthropic SDK retries transient failures (429 / 5xx / connection) with
+    # exponential backoff before giving up.
+    request_timeout: float = 60.0
+    max_retries: int = 2
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
     available_styles: list[str] = ["passionate", "aggressive", "academic", "humorous"]
     default_pro_style: str = "passionate"
@@ -24,6 +30,8 @@ TEMPERATURE_DEBATERS = settings.temperature_debaters
 TEMPERATURE_JUDGE = settings.temperature_judge
 MAX_TOKENS = settings.max_tokens
 NUM_REBUTTAL_ROUNDS = settings.num_rebuttal_rounds
+REQUEST_TIMEOUT = settings.request_timeout
+MAX_RETRIES = settings.max_retries
 CORS_ORIGINS = settings.cors_origins
 AVAILABLE_STYLES = settings.available_styles
 DEFAULT_PRO_STYLE = settings.default_pro_style

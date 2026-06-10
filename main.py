@@ -2,7 +2,7 @@ import os
 import sys
 import json
 from dotenv import load_dotenv
-from src.agents.base_agent import build_agents
+from src.agents.base_agent import build_agents, AgentError
 from src.debate_controller import DebateController
 from config import AVAILABLE_STYLES, DEFAULT_PRO_STYLE, DEFAULT_CON_STYLE
 
@@ -43,7 +43,14 @@ def main():
 
     # The controller orchestrates the agents
     controller = DebateController(topic, pro_agent, con_agent, judge_agent)
-    controller.run_debate()
+    try:
+        controller.run_debate()
+    except AgentError as e:
+        print("\n" + "=" * 60)
+        print(f"The debate was interrupted: {e}")
+        print("This is usually temporary — check your connection and API key,")
+        print("then run the debate again.")
+        sys.exit(1)
 
     # Offer to save the transcript
     print("\n" + "=" * 60)

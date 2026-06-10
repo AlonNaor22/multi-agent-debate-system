@@ -1,7 +1,19 @@
 from typing import Generator
+import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
-from config import MODEL_NAME, MAX_TOKENS
+from config import MODEL_NAME, MAX_TOKENS, REQUEST_TIMEOUT, MAX_RETRIES
+
+
+class AgentError(RuntimeError):
+    """A debate agent failed to get a response from the LLM.
+
+    Wraps Anthropic API failures (rate limits, overload, timeouts, connection
+    errors) in one clear, domain-specific error so callers don't have to know
+    about the underlying SDK. The CLI turns this into a friendly message instead
+    of crashing mid-debate; the web layer turns it into a clean error event
+    rather than leaking a raw traceback to the browser.
+    """
 
 
 class DebateAgent:
@@ -23,7 +35,12 @@ class DebateAgent:
         self.llm = ChatAnthropic(
             model=MODEL_NAME,
             temperature=temperature,
-            max_tokens=MAX_TOKENS
+            max_tokens=MAX_TOKENS,
+            # Resilience: bound each request and let the SDK retry transient
+            # failures (429 / 5xx / connection errors) with exponential backoff
+            # before surfacing an error. Tunable via config / env.
+            timeout=REQUEST_TIMEOUT,
+            max_retries=MAX_RETRIES,
         )
 
         # 2. THE PROMPT TEMPLATE - This defines HOW the agent thinks.
@@ -45,30 +62,48 @@ class DebateAgent:
         self.chain = self.prompt | self.llm
 
     def respond(self, debate_context: str, instruction: str) -> str:
-        """Generate a response given the current debate state."""
+        """Generate a response given the current debate state.
+
+        Raises :class:`AgentError` if the Anthropic API fails (after the SDK's
+        own retries are exhausted), so callers never see a raw SDK exception.
+        """
 
         # 4. INVOKE - This runs the chain.
         #    We pass in the variables that fill the prompt template.
         #    The chain fills the template, sends it to Claude, returns the response.
-        response = self.chain.invoke({
-            "debate_context": debate_context,
-            "instruction": instruction,
-            "name": self.name,
-            "role": self.role
-        })
+        try:
+            response = self.chain.invoke({
+                "debate_context": debate_context,
+                "instruction": instruction,
+                "name": self.name,
+                "role": self.role
+            })
+        except anthropic.AnthropicError as e:
+            raise AgentError(
+                f"The AI service was unavailable while {self.name} was responding."
+            ) from e
 
         return response.content
 
     def stream_respond(self, debate_context: str, instruction: str) -> Generator[str, None, None]:
-        """Stream a response chunk by chunk for real-time display."""
-        for chunk in self.chain.stream({
-            "debate_context": debate_context,
-            "instruction": instruction,
-            "name": self.name,
-            "role": self.role
-        }):
-            if chunk.content:
-                yield chunk.content
+        """Stream a response chunk by chunk for real-time display.
+
+        Raises :class:`AgentError` if the Anthropic API fails mid-stream, so the
+        web layer can emit a clean error event instead of a raw traceback.
+        """
+        try:
+            for chunk in self.chain.stream({
+                "debate_context": debate_context,
+                "instruction": instruction,
+                "name": self.name,
+                "role": self.role
+            }):
+                if chunk.content:
+                    yield chunk.content
+        except anthropic.AnthropicError as e:
+            raise AgentError(
+                f"The AI service was unavailable while {self.name} was responding."
+            ) from e
 
 
 def build_agents(pro_style: str, con_style: str) -> tuple["DebateAgent", "DebateAgent", "DebateAgent"]:

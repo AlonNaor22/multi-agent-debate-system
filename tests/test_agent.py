@@ -1,5 +1,9 @@
+import anthropic
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
+
+import config
+from src.agents.base_agent import AgentError
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +48,15 @@ class TestDebateAgentConstruct:
             DebateAgent(name="X", role="Y", system_prompt="Z", temperature=0.1)
             call_kwargs = mock_llm.call_args[1]
             assert call_kwargs["temperature"] == 0.1
+
+    def test_configures_timeout_and_retries(self):
+        with patch("src.agents.base_agent.ChatAnthropic") as mock_llm, \
+             patch("src.agents.base_agent.ChatPromptTemplate"):
+            from src.agents.base_agent import DebateAgent
+            DebateAgent(name="X", role="Y", system_prompt="Z")
+            call_kwargs = mock_llm.call_args[1]
+            assert call_kwargs["timeout"] == config.REQUEST_TIMEOUT
+            assert call_kwargs["max_retries"] == config.MAX_RETRIES
 
 
 # ---------------------------------------------------------------------------
@@ -124,3 +137,66 @@ class TestBuildAgents:
             pro, con, judge = build_agents("aggressive", "academic")
         assert pro.name == "Pro"
         assert con.name == "Con"
+
+
+# ---------------------------------------------------------------------------
+# Failure paths — transient API errors become AgentError
+# ---------------------------------------------------------------------------
+
+class TestRespondFailure:
+    def test_anthropic_error_becomes_agent_error(self):
+        agent = _make_agent()
+        agent.chain = MagicMock()
+        agent.chain.invoke.side_effect = anthropic.AnthropicError("api down")
+
+        with pytest.raises(AgentError):
+            agent.respond("ctx", "instr")
+
+    def test_original_exception_is_chained(self):
+        agent = _make_agent()
+        agent.chain = MagicMock()
+        original = anthropic.AnthropicError("api down")
+        agent.chain.invoke.side_effect = original
+
+        with pytest.raises(AgentError) as exc_info:
+            agent.respond("ctx", "instr")
+
+        # `raise ... from e` preserves the cause for server-side logging.
+        assert exc_info.value.__cause__ is original
+
+    def test_non_anthropic_errors_propagate_unwrapped(self):
+        """A genuine bug (not an API failure) is not masked as an AgentError."""
+        agent = _make_agent()
+        agent.chain = MagicMock()
+        agent.chain.invoke.side_effect = ValueError("programming error")
+
+        with pytest.raises(ValueError):
+            agent.respond("ctx", "instr")
+
+
+class TestStreamRespondFailure:
+    def test_anthropic_error_becomes_agent_error(self):
+        agent = _make_agent()
+        agent.chain = MagicMock()
+        agent.chain.stream.side_effect = anthropic.AnthropicError("api down")
+
+        with pytest.raises(AgentError):
+            list(agent.stream_respond("ctx", "instr"))
+
+    def test_failure_after_partial_stream(self):
+        agent = _make_agent()
+        agent.chain = MagicMock()
+
+        def chunks_then_boom():
+            yield MagicMock(content="partial ")
+            raise anthropic.AnthropicError("dropped mid-stream")
+
+        agent.chain.stream.return_value = chunks_then_boom()
+
+        collected = []
+        with pytest.raises(AgentError):
+            for chunk in agent.stream_respond("ctx", "instr"):
+                collected.append(chunk)
+
+        # The chunk yielded before the failure was delivered; then AgentError.
+        assert collected == ["partial "]
