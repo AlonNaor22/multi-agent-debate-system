@@ -109,7 +109,6 @@ class TestDebateAgentRespond:
 # ---------------------------------------------------------------------------
 
 class TestDebateAgentAstreamRespond:
-    @pytest.mark.asyncio
     async def test_yields_non_empty_chunks(self):
         agent = _make_agent()
         agent.chain = MagicMock()
@@ -121,7 +120,6 @@ class TestDebateAgentAstreamRespond:
 
         assert result == ["Hello ", "world"]  # empty chunk filtered
 
-    @pytest.mark.asyncio
     async def test_empty_chunks_skipped(self):
         agent = _make_agent()
         agent.chain = MagicMock()
@@ -191,7 +189,6 @@ class TestRespondFailure:
 
 
 class TestAstreamRespondFailure:
-    @pytest.mark.asyncio
     async def test_anthropic_error_becomes_agent_error(self):
         agent = _make_agent()
         agent.chain = MagicMock()
@@ -202,7 +199,6 @@ class TestAstreamRespondFailure:
         with pytest.raises(AgentError):
             [chunk async for chunk in agent.astream_respond("ctx", "instr")]
 
-    @pytest.mark.asyncio
     async def test_failure_after_partial_stream(self):
         agent = _make_agent()
         agent.chain = MagicMock()
