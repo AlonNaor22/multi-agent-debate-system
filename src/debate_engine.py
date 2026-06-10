@@ -39,6 +39,7 @@ from src.prompts import (
     INSTRUCTION_VERDICT,
     INSTRUCTION_SCORING,
 )
+from src.scoring import DebateScores
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ class DebateState:
         self.topic = topic
         self.transcript: list[dict] = []
         self.phase: DebatePhase = DebatePhase.INTRODUCTION
-        self.argument_scores: Optional[str] = None
+        self.argument_scores: Optional[DebateScores] = None
 
     def add_to_transcript(self, speaker: str, content: str) -> None:
         """Record what was said and by whom, tagged with the current phase."""
@@ -98,7 +99,6 @@ _LIMIT_TEMPLATES = {
     "rebuttal": " Be focused and concise (under {n} words).",
     "closing":  " Be impactful but concise (under {n} words).",
     "verdict":  "\nKeep it thorough but concise (under {n} words).",
-    "scoring":  "\nKeep it concise (under {n} words).",
 }
 
 
@@ -116,7 +116,6 @@ class WordLimits:
     rebuttal: int = 200
     closing: int = 200
     verdict: int = 300
-    scoring: int = 400
 
     def suffix(self, kind: str) -> str:
         """Return the instruction suffix for a given phase ``kind``."""
@@ -158,7 +157,19 @@ class Vote:
     the verdict (CLI ``input()`` / web WebSocket) and records it."""
 
 
-DebateEvent = Union[PhaseChange, Turn, Vote]
+@dataclass(frozen=True)
+class Score:
+    """The judge produces the structured scoreboard for the SCORING phase.
+
+    Unlike a :class:`Turn`, this is not streamed as a chat message — the consumer
+    calls the agent's structured-scoring method and renders/sends the typed
+    :class:`~src.scoring.DebateScores` result.
+    """
+    agent: DebateAgent
+    instruction: str
+
+
+DebateEvent = Union[PhaseChange, Turn, Vote, Score]
 
 
 # ---------------------------------------------------------------------------
@@ -263,14 +274,9 @@ class DebateEngine:
             "Final Verdict",
         )
 
-        # --- PHASE 6: Argument scoring (judge again, scored individually) ---
+        # --- PHASE 6: Argument scoring — the judge returns a typed scoreboard ---
         yield PhaseChange(DebatePhase.SCORING)
-        yield Turn(
-            Speaker.SCORING,
-            self.judge,
-            self._instruction(INSTRUCTION_SCORING, "scoring"),
-            "Argument Scores",
-        )
+        yield Score(self.judge, INSTRUCTION_SCORING)
 
         # --- Debate over ---
         yield PhaseChange(DebatePhase.FINISHED)

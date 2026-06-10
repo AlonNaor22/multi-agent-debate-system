@@ -29,7 +29,8 @@ class MockWebSocket {
   send = vi.fn()
   close = vi.fn().mockImplementation(() => { this.onclose?.() })
 
-  constructor(_url: string) {
+  constructor() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture the mock instance for assertions
     mockWs = this
   }
 }

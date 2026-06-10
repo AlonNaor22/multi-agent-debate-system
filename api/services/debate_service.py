@@ -13,6 +13,7 @@ from src.debate_engine import (
     PhaseChange,
     Turn,
     Vote,
+    Score,
     DEFAULT_WORD_LIMITS,
     format_audience_vote,
 )
@@ -157,8 +158,17 @@ class DebateService:
                         session, event.agent, event.instruction, event.speaker, event.label
                     ):
                         yield ws_event
-                    if event.speaker == Speaker.SCORING:
-                        session.argument_scores = session.transcript[-1]["content"]
+
+                elif isinstance(event, Score):
+                    # The judge returns a typed scoreboard (not a streamed turn).
+                    session.argument_scores = await event.agent.ascore_arguments(
+                        session.get_transcript_text(), event.instruction
+                    )
+                    yield {
+                        "type": WSMessageType.ARGUMENT_SCORES,
+                        "debate_id": session.debate_id,
+                        "data": {"scores": session.argument_scores.model_dump()}
+                    }
 
                 elif isinstance(event, Vote):
                     yield {
@@ -189,7 +199,10 @@ class DebateService:
                 "debate_id": session.debate_id,
                 "data": {
                     "transcript": session.transcript,
-                    "argument_scores": session.argument_scores
+                    "argument_scores": (
+                        session.argument_scores.model_dump()
+                        if session.argument_scores else None
+                    )
                 }
             }
             logger.info("Debate complete: id=%s", session.debate_id)

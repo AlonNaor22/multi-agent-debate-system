@@ -3,6 +3,7 @@ import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from config import MODEL_NAME, MAX_TOKENS, REQUEST_TIMEOUT, MAX_RETRIES
+from src.scoring import DebateScores
 
 
 class AgentError(RuntimeError):
@@ -106,6 +107,41 @@ class DebateAgent:
         except anthropic.AnthropicError as e:
             raise AgentError(
                 f"The AI service was unavailable while {self.name} was responding."
+            ) from e
+
+    def score_arguments(self, debate_context: str, instruction: str) -> DebateScores:
+        """Score the debate's arguments as structured data (synchronous; CLI).
+
+        Uses Anthropic structured outputs (LangChain's ``with_structured_output``)
+        so the judge returns a typed :class:`DebateScores` instead of free text.
+        Raises :class:`AgentError` if the API fails.
+        """
+        chain = self.prompt | self.llm.with_structured_output(DebateScores)
+        try:
+            return chain.invoke({
+                "debate_context": debate_context,
+                "instruction": instruction,
+                "name": self.name,
+                "role": self.role,
+            })
+        except anthropic.AnthropicError as e:
+            raise AgentError(
+                f"The AI service was unavailable while {self.name} was scoring."
+            ) from e
+
+    async def ascore_arguments(self, debate_context: str, instruction: str) -> DebateScores:
+        """Async counterpart of :meth:`score_arguments` (used by the web service)."""
+        chain = self.prompt | self.llm.with_structured_output(DebateScores)
+        try:
+            return await chain.ainvoke({
+                "debate_context": debate_context,
+                "instruction": instruction,
+                "name": self.name,
+                "role": self.role,
+            })
+        except anthropic.AnthropicError as e:
+            raise AgentError(
+                f"The AI service was unavailable while {self.name} was scoring."
             ) from e
 
 

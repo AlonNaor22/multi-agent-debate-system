@@ -16,6 +16,7 @@ from src.debate_engine import (
     PhaseChange,
     Turn,
     Vote,
+    Score,
     format_audience_vote,
 )
 
@@ -74,7 +75,7 @@ class TestDebateState:
 class TestWordLimits:
     def test_default_values_match_web_constants(self):
         assert DEFAULT_WORD_LIMITS == WordLimits(
-            intro=150, opening=250, rebuttal=200, closing=200, verdict=300, scoring=400
+            intro=150, opening=250, rebuttal=200, closing=200, verdict=300
         )
 
     def test_suffix_includes_limit_and_separator(self):
@@ -112,15 +113,22 @@ class TestEngineSequence:
             Speaker.PRO, Speaker.CON,            # rebuttal round 2
             Speaker.PRO, Speaker.CON,            # closings
             Speaker.JUDGE,                       # verdict
-            Speaker.SCORING,                     # scoring
         ]
-        # The judge speaks as moderator, judge and scorer; debaters keep their agent.
+        # Scoring is a Score event, not a streamed Turn (see test below).
+        # The judge speaks as moderator and judge; debaters keep their agent.
         by_speaker = {t.speaker: t.agent for t in turns}
         assert by_speaker[Speaker.MODERATOR] is JUDGE_AGENT
         assert by_speaker[Speaker.JUDGE] is JUDGE_AGENT
-        assert by_speaker[Speaker.SCORING] is JUDGE_AGENT
         assert by_speaker[Speaker.PRO] is PRO_AGENT
         assert by_speaker[Speaker.CON] is CON_AGENT
+
+    def test_scoring_is_a_score_event_run_by_the_judge(self):
+        events = list(build_engine().events())
+        scores = [e for e in events if isinstance(e, Score)]
+        assert len(scores) == 1
+        assert scores[0].agent is JUDGE_AGENT
+        # Scoring must NOT be streamed as a Turn anymore.
+        assert all(not (isinstance(e, Turn) and e.speaker == Speaker.SCORING) for e in events)
 
     def test_single_vote_between_rebuttals_and_closings(self):
         events = list(build_engine().events())

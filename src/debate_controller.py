@@ -2,15 +2,18 @@ import time
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from config import NUM_REBUTTAL_ROUNDS
 from src.debate_enums import DebatePhase, Speaker
 from src.agents.base_agent import DebateAgent
+from src.scoring import DebateScores
 from src.debate_engine import (
     DebateState,
     DebateEngine,
     PhaseChange,
     Turn,
     Vote,
+    Score,
     format_audience_vote,
 )
 
@@ -36,7 +39,6 @@ class DebateController(DebateState):
         Speaker.PRO: "green",
         Speaker.CON: "red",
         Speaker.JUDGE: "yellow",
-        Speaker.SCORING: "magenta",
     }
 
     def __init__(self, topic: str, pro_agent: DebateAgent, con_agent: DebateAgent, judge_agent: DebateAgent):
@@ -70,8 +72,6 @@ class DebateController(DebateState):
 
     def _title(self, speaker: Speaker, label: Optional[str]) -> str:
         """Build the Rich panel title for a turn."""
-        if speaker == Speaker.SCORING:
-            return "ARGUMENT SCORES"
         if label:
             return f"{speaker.value} - {label}"
         return speaker.value
@@ -106,12 +106,37 @@ class DebateController(DebateState):
                     self._SPEAKER_STYLES.get(event.speaker, "white"),
                     elapsed,
                 )
-                if event.speaker == Speaker.SCORING:
-                    self.argument_scores = response
+            elif isinstance(event, Score):
+                self.argument_scores = event.agent.score_arguments(
+                    self.get_transcript_text(), event.instruction
+                )
+                self._display_scores(self.argument_scores)
             elif isinstance(event, Vote):
                 self._collect_vote()
 
         return self.transcript
+
+    def _display_scores(self, scores: DebateScores):
+        """Render the judge's structured scoreboard as a Rich table."""
+        self.console.print()
+        table = Table(title="ARGUMENT SCORES", title_style="bold magenta")
+        table.add_column("Side", style="bold")
+        table.add_column("Argument")
+        table.add_column("Score", justify="right")
+        table.add_column("Reason")
+        for arg in scores.pro_arguments:
+            table.add_row("PRO", arg.summary, f"{arg.score}/10", arg.reason)
+        for arg in scores.con_arguments:
+            table.add_row("CON", arg.summary, f"{arg.score}/10", arg.reason)
+        self.console.print(table)
+        self.console.print(Panel(
+            f"PRO average: {scores.pro_average}/10    CON average: {scores.con_average}/10\n"
+            f"Winner: {scores.winner}\n\n"
+            f"Strongest: {scores.strongest_argument}\n"
+            f"Weakest: {scores.weakest_argument}",
+            title="SCOREBOARD",
+            style="magenta",
+        ))
 
     def _collect_vote(self):
         """Prompt the human audience for an interim vote and record it."""

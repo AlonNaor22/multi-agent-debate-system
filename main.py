@@ -76,7 +76,10 @@ def main():
                 "pro_style": pro_style,
                 "con_style": con_style,
                 "transcript": controller.transcript,
-                "argument_scores": controller.argument_scores,
+                "argument_scores": (
+                    controller.argument_scores.model_dump()
+                    if controller.argument_scores else None
+                ),
             }
             try:
                 with open(json_path, "w", encoding="utf-8") as f:

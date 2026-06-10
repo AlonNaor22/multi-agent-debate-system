@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDebateStore } from './stores/debateStore';
 import { DebateSetup, DebateChat } from './components/debate';
+import type { DebateScores } from './types/debate';
 
 type Vote = 'PRO' | 'CON' | 'TIE';
 
@@ -18,6 +19,7 @@ function App() {
     appendStreamingChunk,
     finishStreaming,
     addMessage,
+    setScores,
   } = useDebateStore();
   const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -119,6 +121,10 @@ function App() {
         break;
       }
 
+      case 'argument_scores':
+        setScores(data.scores as DebateScores);
+        break;
+
       case 'debate_complete':
         endDebate();
         break;
@@ -127,7 +133,7 @@ function App() {
         setError(data.message as string);
         break;
     }
-  }, [startDebate, setPhase, startStreaming, appendStreamingChunk, finishStreaming, setIsWaitingForVote, addMessage, endDebate, setError]);
+  }, [startDebate, setPhase, startStreaming, appendStreamingChunk, finishStreaming, setIsWaitingForVote, addMessage, setScores, endDebate, setError]);
 
   const handleVote = useCallback((vote: Vote) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

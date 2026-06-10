@@ -23,6 +23,23 @@ export interface DebateMessage {
   phase: DebatePhase;
 }
 
+// Structured judge scoring (mirrors src/scoring.py DebateScores).
+export interface ArgumentScore {
+  summary: string;
+  score: number;
+  reason: string;
+}
+
+export interface DebateScores {
+  pro_arguments: ArgumentScore[];
+  con_arguments: ArgumentScore[];
+  pro_average: number;
+  con_average: number;
+  winner: 'PRO' | 'CON' | 'TIE';
+  strongest_argument: string;
+  weakest_argument: string;
+}
+
 export interface DebateConfig {
   topic: string;
   proStyle: string;
@@ -45,6 +62,7 @@ export type WSMessageType =
   | 'message_complete'
   | 'vote_required'
   | 'vote_received'
+  | 'argument_scores'
   | 'debate_complete'
   | 'error';
 

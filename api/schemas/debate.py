@@ -42,6 +42,7 @@ class WSMessageType(str, Enum):
     MESSAGE_COMPLETE = "message_complete"
     VOTE_REQUIRED = "vote_required"
     VOTE_RECEIVED = "vote_received"
+    ARGUMENT_SCORES = "argument_scores"
     DEBATE_COMPLETE = "debate_complete"
     ERROR = "error"
 

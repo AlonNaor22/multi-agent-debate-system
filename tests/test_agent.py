@@ -1,9 +1,10 @@
 import anthropic
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
 import config
 from src.agents.base_agent import AgentError
+from conftest import sample_scores
 
 
 # ---------------------------------------------------------------------------
@@ -213,3 +214,51 @@ class TestAstreamRespondFailure:
 
         # The chunk yielded before the failure was delivered; then AgentError.
         assert collected == ["partial "]
+
+
+# ---------------------------------------------------------------------------
+# Structured scoring (with_structured_output)
+# ---------------------------------------------------------------------------
+
+def _judge_with_scoring_chain(chain):
+    """Build a mocked judge whose `prompt | structured_llm` yields `chain`."""
+    agent = _make_agent(name="Judge", role="judge")
+    agent.prompt.__or__.return_value = chain  # prompt | llm.with_structured_output(...)
+    return agent
+
+
+class TestScoreArguments:
+    def test_returns_structured_scores(self):
+        sample = sample_scores()
+        chain = MagicMock()
+        chain.invoke.return_value = sample
+        agent = _judge_with_scoring_chain(chain)
+
+        assert agent.score_arguments("ctx", "instr") is sample
+
+    def test_anthropic_error_becomes_agent_error(self):
+        chain = MagicMock()
+        chain.invoke.side_effect = anthropic.AnthropicError("scoring down")
+        agent = _judge_with_scoring_chain(chain)
+
+        with pytest.raises(AgentError):
+            agent.score_arguments("ctx", "instr")
+
+
+class TestAscoreArguments:
+    async def test_returns_structured_scores(self):
+        sample = sample_scores()
+        chain = MagicMock()
+        chain.ainvoke = AsyncMock(return_value=sample)
+        agent = _judge_with_scoring_chain(chain)
+
+        result = await agent.ascore_arguments("ctx", "instr")
+        assert result is sample
+
+    async def test_anthropic_error_becomes_agent_error(self):
+        chain = MagicMock()
+        chain.ainvoke = AsyncMock(side_effect=anthropic.AnthropicError("scoring down"))
+        agent = _judge_with_scoring_chain(chain)
+
+        with pytest.raises(AgentError):
+            await agent.ascore_arguments("ctx", "instr")

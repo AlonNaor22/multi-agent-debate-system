@@ -86,8 +86,10 @@ class TestRunDebateHappyPath:
             "closing_pro", "closing_con", "verdict", "scoring", "finished",
         ]
 
-        # 1 intro + 2 openings + 2*2 rebuttals + 2 closings + verdict + scoring = 11 turns
-        assert types.count(WSMessageType.MESSAGE_COMPLETE) == 11
+        # 1 intro + 2 openings + 2*2 rebuttals + 2 closings + verdict = 10 streamed turns
+        # (scoring is a structured ARGUMENT_SCORES event, not a streamed turn).
+        assert types.count(WSMessageType.MESSAGE_COMPLETE) == 10
+        assert types.count(WSMessageType.ARGUMENT_SCORES) == 1
         assert types.count(WSMessageType.VOTE_REQUIRED) == 1
         assert types.count(WSMessageType.VOTE_RECEIVED) == 1
 
@@ -103,7 +105,7 @@ class TestRunDebateHappyPath:
         assert first["data"]["speaker"] == "MODERATOR"
         assert first["data"]["content"] == "JUDGE-a JUDGE-b"
 
-    async def test_vote_recorded_in_transcript_and_scores_set(self, mock_build_agents):
+    async def test_vote_recorded_in_transcript_and_structured_scores_set(self, mock_build_agents):
         svc = DebateService()
         with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
             session = svc.create_debate("T", "passionate", "passionate")
@@ -113,7 +115,22 @@ class TestRunDebateHappyPath:
         transcript = complete["data"]["transcript"]
         audience = [e for e in transcript if e["speaker"] == "AUDIENCE"]
         assert audience and "CON" in audience[0]["content"]
-        assert complete["data"]["argument_scores"] == "JUDGE-a JUDGE-b"
+
+        # argument_scores is now a serialized DebateScores (dict), with computed averages.
+        scores = complete["data"]["argument_scores"]
+        assert scores["winner"] == "PRO"
+        assert scores["pro_average"] == 8.0
+        assert scores["con_average"] == 6.0
+        assert [a["score"] for a in scores["pro_arguments"]] == [8]
+
+    async def test_argument_scores_event_emitted_during_scoring(self, mock_build_agents):
+        svc = DebateService()
+        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
+            session = svc.create_debate("T", "passionate", "passionate")
+            events = await _drain(svc, session)
+
+        scores_event = next(e for e in events if e["type"] == WSMessageType.ARGUMENT_SCORES)
+        assert scores_event["data"]["scores"]["winner"] == "PRO"
 
     async def test_session_evicted_after_completion(self, mock_build_agents):
         svc = DebateService()

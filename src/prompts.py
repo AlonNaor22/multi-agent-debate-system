@@ -146,20 +146,13 @@ INSTRUCTION_VERDICT = (
     "5. Declaration of winner (or tie)"
 )
 
+# The scoring output is a typed schema (see src/scoring.py), so this instruction
+# describes the analysis to perform — not a text format.
 INSTRUCTION_SCORING = (
-    "Analyze the debate transcript and score EACH distinct argument made by both sides.\n"
-    "Format your response as:\n\n"
-    "PRO ARGUMENTS:\n"
-    "1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
-    "2. ...\n\n"
-    "CON ARGUMENTS:\n"
-    "1. [Argument summary] — Score: X/10 — Reason: [brief reason]\n"
-    "2. ...\n\n"
-    "OVERALL:\n"
-    "- Pro total average: X/10\n"
-    "- Con total average: X/10\n"
-    "- Strongest single argument: [which one and why]\n"
-    "- Weakest single argument: [which one and why]"
+    "Analyze the debate transcript and score each distinct argument made by both "
+    "sides. For every argument, give a one-line summary, a score from 1 to 10, and "
+    "a brief reason. Then declare the overall winner (PRO, CON, or TIE) and identify "
+    "the single strongest and single weakest arguments of the whole debate."
 )
 
 JUDGE_AGENT_PROMPT = """You are an impartial judge and moderator for this debate.

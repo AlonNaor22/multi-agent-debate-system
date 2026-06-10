@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from src.debate_controller import DebateController
 from src.debate_enums import DebatePhase
+from src.scoring import DebateScores
+from conftest import sample_scores
 
 
 # ---------------------------------------------------------------------------
@@ -12,6 +14,7 @@ from src.debate_enums import DebatePhase
 def _make_agent(response="Agent response."):
     agent = MagicMock()
     agent.respond.return_value = response
+    agent.score_arguments.return_value = sample_scores()  # used only by the judge
     return agent
 
 
@@ -64,18 +67,18 @@ class TestRunDebate:
         assert "CON" in speakers
         assert "JUDGE" in speakers
         assert "AUDIENCE" in speakers
-        assert "SCORING" in speakers
+        # SCORING is no longer a transcript turn — it's structured argument_scores.
 
     def test_phase_sequence_correct(self, controller):
         self._run(controller)
         phases = [e["phase"] for e in controller.transcript]
         # Introduction must come first
         assert phases[0] == DebatePhase.INTRODUCTION.value
-        # The last entry is the argument scoring, recorded under the SCORING
-        # phase (the controller then advances to FINISHED with no further turn).
-        assert phases[-1] == DebatePhase.SCORING.value
+        # The last transcript entry is the verdict; the SCORING phase produces a
+        # structured scoreboard (not a turn) and the engine then advances to
+        # FINISHED.
+        assert phases[-1] == DebatePhase.VERDICT.value
         assert controller.phase == DebatePhase.FINISHED
-        assert DebatePhase.VERDICT.value in phases
 
     def test_phase_ends_as_finished(self, controller):
         self._run(controller)
@@ -83,14 +86,15 @@ class TestRunDebate:
 
     def test_argument_scores_set_after_run(self, controller):
         self._run(controller)
-        assert controller.argument_scores is not None
+        assert isinstance(controller.argument_scores, DebateScores)
 
     def test_all_agents_called(self, controller, agents):
         pro, con, judge = agents
         self._run(controller)
         assert pro.respond.called
         assert con.respond.called
-        assert judge.respond.called
+        assert judge.respond.called            # intro + verdict
+        assert judge.score_arguments.called    # structured scoring
 
     def test_rebuttal_rounds_match_config(self, controller, agents):
         pro, con, judge = agents
@@ -98,10 +102,13 @@ class TestRunDebate:
              patch("builtins.input", return_value="1"), \
              patch.object(controller.console, "print"):
             controller.run_debate()
-        # Pro is called: 1 (opening) + 3 (rebuttals) + 1 (closing) = 5 debate calls
-        # plus judge intro + verdict + scoring = 3 judge calls; con same as pro
+        # Pro is called: 1 (opening) + 3 (rebuttals) + 1 (closing) = 5 debate calls;
+        # con the same. The judge does intro + verdict via respond (scoring is a
+        # separate structured score_arguments call).
         assert pro.respond.call_count == 5
         assert con.respond.call_count == 5
+        assert judge.respond.call_count == 2
+        assert judge.score_arguments.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -131,23 +138,15 @@ class TestEdgeCases:
     def test_transcript_preserved_after_error_in_scoring(self, controller, agents):
         """If scoring raises after the verdict, the rest of the transcript is intact."""
         pro, con, judge = agents
-        call_count = [0]
-        original = judge.respond
-
-        def respond_with_late_error(*a, **kw):
-            call_count[0] += 1
-            if call_count[0] >= 3:  # intro + verdict pass; scoring fails
-                raise RuntimeError("LLM failure")
-            return "response"
-
-        judge.respond = respond_with_late_error
+        judge.score_arguments.side_effect = RuntimeError("scoring failed")
 
         with patch("builtins.input", return_value="1"), \
              patch.object(controller.console, "print"), \
              pytest.raises(RuntimeError):
             controller.run_debate()
 
-        # Transcript up to the failure is still intact
+        # Everything through the verdict was recorded before scoring failed.
         speakers = [e["speaker"] for e in controller.transcript]
         assert "MODERATOR" in speakers
         assert "PRO" in speakers
+        assert "JUDGE" in speakers

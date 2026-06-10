@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DebatePhase, Speaker, DebateMessage, StyleInfo } from '../types/debate';
+import type { DebatePhase, Speaker, DebateMessage, StyleInfo, DebateScores } from '../types/debate';
 
 interface DebateState {
   // Setup state
@@ -18,6 +18,9 @@ interface DebateState {
   isTyping: boolean;
   error: string | null;
 
+  // Final structured scoreboard (set when the judge's scores arrive)
+  scores: DebateScores | null;
+
   // Streaming state
   streamingContent: string;
   streamingSpeaker: Speaker | null;
@@ -34,6 +37,7 @@ interface DebateState {
   setIsTyping: (isTyping: boolean) => void;
   setIsWaitingForVote: (waiting: boolean) => void;
   setError: (error: string | null) => void;
+  setScores: (scores: DebateScores) => void;
   endDebate: () => void;
   reset: () => void;
 
@@ -56,6 +60,7 @@ const initialState = {
   currentSpeaker: null,
   isTyping: false,
   error: null,
+  scores: null,
   streamingContent: '',
   streamingSpeaker: null,
 };
@@ -78,6 +83,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       messages: [],
       phase: null,
       error: null,
+      scores: null,
       streamingContent: '',
       streamingSpeaker: null,
     }),
@@ -97,6 +103,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
   setIsTyping: (isTyping) => set({ isTyping }),
   setIsWaitingForVote: (isWaitingForVote) => set({ isWaitingForVote }),
   setError: (error) => set({ error }),
+  setScores: (scores) => set({ scores }),
 
   endDebate: () =>
     set((state) => ({

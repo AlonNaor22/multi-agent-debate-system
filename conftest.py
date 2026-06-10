@@ -3,14 +3,27 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.scoring import ArgumentScore, DebateScores
+
+
+def sample_scores() -> DebateScores:
+    """A fixed DebateScores for tests (PRO avg 8.0, CON avg 6.0, PRO wins)."""
+    return DebateScores(
+        pro_arguments=[ArgumentScore(summary="Pro point", score=8, reason="well argued")],
+        con_arguments=[ArgumentScore(summary="Con point", score=6, reason="some merit")],
+        winner="PRO",
+        strongest_argument="Pro point",
+        weakest_argument="Con point",
+    )
+
 
 @pytest.fixture
 def make_mock_agent():
     """Factory for a DebateAgent stand-in — no real LLM, no API key.
 
-    The returned agent's ``astream_respond`` is an async generator that yields a
-    couple of canned chunks, or raises ``AgentError`` when ``fail=True`` (to
-    exercise the error path). ``respond`` is also stubbed for completeness.
+    ``astream_respond`` is an async generator yielding canned chunks (or raising
+    ``AgentError`` when ``fail=True``); ``ascore_arguments`` / ``score_arguments``
+    return a fixed :class:`DebateScores`. ``respond`` is stubbed for completeness.
     """
     from src.agents.base_agent import AgentError
 
@@ -24,7 +37,14 @@ def make_mock_agent():
             yield f"{tag}-a "
             yield f"{tag}-b"
 
+        async def ascore_arguments(debate_context, instruction):
+            if fail:
+                raise AgentError(f"{tag}: AI service unavailable")
+            return sample_scores()
+
         agent.astream_respond = astream_respond
+        agent.ascore_arguments = ascore_arguments
+        agent.score_arguments.return_value = sample_scores()
         agent.respond.return_value = f"{tag}-a {tag}-b"
         return agent
 

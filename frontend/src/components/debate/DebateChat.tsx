@@ -3,6 +3,7 @@ import { useDebateStore } from '../../stores/debateStore';
 import { DebateMessage } from './DebateMessage';
 import { DebateProgress } from './DebateProgress';
 import { VotingModal } from './VotingModal';
+import { Scoreboard } from './Scoreboard';
 
 interface DebateChatProps {
   onVote: (vote: 'PRO' | 'CON' | 'TIE') => void;
@@ -19,6 +20,7 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
     isWaitingForVote,
     streamingContent,
     streamingSpeaker,
+    scores,
   } = useDebateStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -66,6 +68,9 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
               content={streamingContent}
             />
           )}
+
+          {/* Final structured scoreboard from the judge */}
+          {scores && <Scoreboard scores={scores} />}
 
           <div ref={messagesEndRef} />
         </div>

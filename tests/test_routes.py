@@ -111,9 +111,15 @@ class TestWebSocket:
         assert types[-1] == "debate_complete"
         assert "vote_required" in types
         assert "vote_received" in types
+        assert "argument_scores" in types
         assert "error" not in types
         # Token-by-token streaming reaches the client.
         assert "message_chunk" in types
+
+        # The structured scoreboard reaches the client.
+        scores = next(m for m in messages if m["type"] == "argument_scores")["data"]["scores"]
+        assert scores["winner"] in ("PRO", "CON", "TIE")
+        assert "pro_average" in scores and "con_average" in scores
 
     def test_error_path_emits_clean_error_event(self, client, make_mock_agent):
         def factory(pro_style, con_style):
