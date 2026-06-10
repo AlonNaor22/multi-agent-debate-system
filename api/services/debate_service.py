@@ -1,7 +1,5 @@
 import asyncio
 import logging
-import queue
-import threading
 import uuid
 from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
@@ -24,10 +22,8 @@ from api.schemas.debate import Speaker, WSMessageType
 # Load environment variables
 load_dotenv()
 
-# Streaming / timing constants
+# How long to wait for the audience vote before defaulting to a tie.
 VOTE_TIMEOUT_SECONDS = 300
-STREAM_QUEUE_TIMEOUT = 0.1
-STREAM_POLL_INTERVAL = 0.05
 
 
 class DebateSession(DebateState):
@@ -84,7 +80,14 @@ class DebateService:
         speaker: Speaker,
         label: Optional[str] = None
     ) -> AsyncGenerator[dict, None]:
-        """Stream an agent's response chunk by chunk."""
+        """Stream an agent's response chunk by chunk over the WebSocket.
+
+        Consumes the agent's native async stream directly — no background thread,
+        no queue, no polling. If the stream raises :class:`AgentError`, it
+        propagates to :meth:`run_debate` (which turns it into a clean error
+        event); the partial turn is intentionally not recorded and no
+        MESSAGE_COMPLETE is sent.
+        """
         yield {
             "type": WSMessageType.MESSAGE_START,
             "debate_id": session.debate_id,
@@ -92,48 +95,13 @@ class DebateService:
         }
 
         full_content = ""
-
-        def stream_generator():
-            return agent.stream_respond(session.get_transcript_text(), instruction)
-
-        chunk_queue: queue.Queue = queue.Queue()
-        done_event = threading.Event()
-        worker_error: list[BaseException] = []
-
-        def stream_worker():
-            # Runs in a background thread. Capture any failure (e.g. AgentError
-            # from a transient API error) so it can be re-raised on the async
-            # side — an unhandled exception here would otherwise die silently in
-            # the thread and leave the message looking like it ended normally.
-            try:
-                for chunk in stream_generator():
-                    chunk_queue.put(chunk)
-            except BaseException as e:  # noqa: BLE001 - re-raised below
-                worker_error.append(e)
-            finally:
-                done_event.set()
-
-        thread = threading.Thread(target=stream_worker)
-        thread.start()
-
-        while not done_event.is_set() or not chunk_queue.empty():
-            try:
-                chunk = chunk_queue.get(timeout=STREAM_QUEUE_TIMEOUT)
-                full_content += chunk
-                yield {
-                    "type": WSMessageType.MESSAGE_CHUNK,
-                    "debate_id": session.debate_id,
-                    "data": {"speaker": speaker.value, "chunk": chunk}
-                }
-            except queue.Empty:
-                await asyncio.sleep(STREAM_POLL_INTERVAL)
-
-        thread.join()
-
-        # Surface a streaming failure to run_debate, which turns it into a clean
-        # error event. Don't record a partial turn or send MESSAGE_COMPLETE.
-        if worker_error:
-            raise worker_error[0]
+        async for chunk in agent.astream_respond(session.get_transcript_text(), instruction):
+            full_content += chunk
+            yield {
+                "type": WSMessageType.MESSAGE_CHUNK,
+                "debate_id": session.debate_id,
+                "data": {"speaker": speaker.value, "chunk": chunk}
+            }
 
         session.add_to_transcript(speaker.value, full_content)
 

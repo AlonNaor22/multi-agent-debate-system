@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import AsyncGenerator
 import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
@@ -85,14 +85,17 @@ class DebateAgent:
 
         return response.content
 
-    def stream_respond(self, debate_context: str, instruction: str) -> Generator[str, None, None]:
-        """Stream a response chunk by chunk for real-time display.
+    async def astream_respond(self, debate_context: str, instruction: str) -> AsyncGenerator[str, None]:
+        """Stream a response chunk by chunk using LangChain's native async streaming.
 
-        Raises :class:`AgentError` if the Anthropic API fails mid-stream, so the
-        web layer can emit a clean error event instead of a raw traceback.
+        This is what the streaming web service consumes. Using ``chain.astream``
+        keeps the whole path on the event loop — no background thread bridging a
+        blocking iterator, no busy-poll. Raises :class:`AgentError` if the
+        Anthropic API fails mid-stream, so the web layer can emit a clean error
+        event instead of a raw traceback.
         """
         try:
-            for chunk in self.chain.stream({
+            async for chunk in self.chain.astream({
                 "debate_context": debate_context,
                 "instruction": instruction,
                 "name": self.name,

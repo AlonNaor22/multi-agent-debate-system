@@ -19,6 +19,19 @@ def _make_agent(name="Pro", role="arguing FOR", system_prompt="Be persuasive."):
     return agent
 
 
+async def _aiter(items):
+    """Yield items as an async iterator — stand-in for chain.astream(...)."""
+    for item in items:
+        yield item
+
+
+async def _aiter_then_raise(items, exc):
+    """Yield items, then raise — a stream that fails partway through."""
+    for item in items:
+        yield item
+    raise exc
+
+
 # ---------------------------------------------------------------------------
 # DebateAgent construction
 # ---------------------------------------------------------------------------
@@ -92,26 +105,29 @@ class TestDebateAgentRespond:
 
 
 # ---------------------------------------------------------------------------
-# DebateAgent.stream_respond
+# DebateAgent.astream_respond (native async streaming)
 # ---------------------------------------------------------------------------
 
-class TestDebateAgentStreamRespond:
-    def test_yields_non_empty_chunks(self):
+class TestDebateAgentAstreamRespond:
+    @pytest.mark.asyncio
+    async def test_yields_non_empty_chunks(self):
         agent = _make_agent()
-        chunks = [MagicMock(content="Hello "), MagicMock(content="world"), MagicMock(content="")]
         agent.chain = MagicMock()
-        agent.chain.stream.return_value = iter(chunks)
+        agent.chain.astream.side_effect = lambda payload: _aiter(
+            [MagicMock(content="Hello "), MagicMock(content="world"), MagicMock(content="")]
+        )
 
-        result = list(agent.stream_respond("ctx", "instr"))
+        result = [chunk async for chunk in agent.astream_respond("ctx", "instr")]
 
         assert result == ["Hello ", "world"]  # empty chunk filtered
 
-    def test_empty_chunks_skipped(self):
+    @pytest.mark.asyncio
+    async def test_empty_chunks_skipped(self):
         agent = _make_agent()
         agent.chain = MagicMock()
-        agent.chain.stream.return_value = iter([MagicMock(content="")])
+        agent.chain.astream.side_effect = lambda payload: _aiter([MagicMock(content="")])
 
-        result = list(agent.stream_respond("ctx", "instr"))
+        result = [chunk async for chunk in agent.astream_respond("ctx", "instr")]
 
         assert result == []
 
@@ -174,28 +190,29 @@ class TestRespondFailure:
             agent.respond("ctx", "instr")
 
 
-class TestStreamRespondFailure:
-    def test_anthropic_error_becomes_agent_error(self):
+class TestAstreamRespondFailure:
+    @pytest.mark.asyncio
+    async def test_anthropic_error_becomes_agent_error(self):
         agent = _make_agent()
         agent.chain = MagicMock()
-        agent.chain.stream.side_effect = anthropic.AnthropicError("api down")
+        agent.chain.astream.side_effect = lambda payload: _aiter_then_raise(
+            [], anthropic.AnthropicError("api down")
+        )
 
         with pytest.raises(AgentError):
-            list(agent.stream_respond("ctx", "instr"))
+            [chunk async for chunk in agent.astream_respond("ctx", "instr")]
 
-    def test_failure_after_partial_stream(self):
+    @pytest.mark.asyncio
+    async def test_failure_after_partial_stream(self):
         agent = _make_agent()
         agent.chain = MagicMock()
-
-        def chunks_then_boom():
-            yield MagicMock(content="partial ")
-            raise anthropic.AnthropicError("dropped mid-stream")
-
-        agent.chain.stream.return_value = chunks_then_boom()
+        agent.chain.astream.side_effect = lambda payload: _aiter_then_raise(
+            [MagicMock(content="partial ")], anthropic.AnthropicError("dropped mid-stream")
+        )
 
         collected = []
         with pytest.raises(AgentError):
-            for chunk in agent.stream_respond("ctx", "instr"):
+            async for chunk in agent.astream_respond("ctx", "instr"):
                 collected.append(chunk)
 
         # The chunk yielded before the failure was delivered; then AgentError.
