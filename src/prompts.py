@@ -109,10 +109,6 @@ Your goal: Make the opponent's position look ridiculous while making solid point
 """ + DEBATER_RULES,
 }
 
-# Default prompts (backwards compatible)
-PRO_AGENT_PROMPT = PRO_STYLES["passionate"]
-CON_AGENT_PROMPT = CON_STYLES["passionate"]
-
 # --- Turn instructions (used by both CLI and web service) ---
 # Templates: call .format(topic=...) or .format(round_num=...) where needed.
 

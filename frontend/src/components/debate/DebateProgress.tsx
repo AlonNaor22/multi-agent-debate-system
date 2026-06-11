@@ -4,19 +4,20 @@ interface DebateProgressProps {
   phase: DebatePhase | null;
 }
 
-const phases: { key: DebatePhase; label: string }[] = [
-  { key: 'introduction', label: 'Intro' },
-  { key: 'opening_pro', label: 'Opening' },
-  { key: 'opening_con', label: 'Opening' },
-  { key: 'rebuttal', label: 'Rebuttals' },
-  { key: 'closing_pro', label: 'Closing' },
-  { key: 'closing_con', label: 'Closing' },
-  { key: 'verdict', label: 'Verdict' },
-  { key: 'scoring', label: 'Scoring' },
-  { key: 'finished', label: 'Done' },
+// The full backend phase sequence, in order. The progress bar collapses these
+// nine phases into the six display steps built in the component below; the
+// `currentIndex` into this array is what drives which steps read as complete.
+const phaseOrder: DebatePhase[] = [
+  'introduction',
+  'opening_pro',
+  'opening_con',
+  'rebuttal',
+  'closing_pro',
+  'closing_con',
+  'verdict',
+  'scoring',
+  'finished',
 ];
-
-const phaseOrder = phases.map(p => p.key);
 
 export function DebateProgress({ phase }: DebateProgressProps) {
   const currentIndex = phase ? phaseOrder.indexOf(phase) : -1;
