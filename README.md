@@ -66,6 +66,7 @@ docker compose up --build
 - Open http://localhost:5173 in your browser once both services start.
 - Make sure your .env file exists with ANTHROPIC_API_KEY set before running.
 - The backend API is available at http://localhost:8000.
+- Persisted debates live in the SQLite database under the `debate-data` volume, so they survive container restarts and rebuilds.
 
 ---
 

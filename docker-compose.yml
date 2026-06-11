@@ -4,8 +4,11 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    volumes:
+      - debate-data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # python is always present in this image; curl is not in python:3.11-slim
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,3 +26,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+volumes:
+  debate-data:
