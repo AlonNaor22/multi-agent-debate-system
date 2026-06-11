@@ -18,6 +18,8 @@ from src.debate_engine import (
     format_audience_vote,
 )
 from config import NUM_REBUTTAL_ROUNDS
+from api import db
+from api.services.debate_repository import save_completed_debate
 from api.schemas.debate import Speaker, WSMessageType
 
 # Load environment variables
@@ -41,6 +43,7 @@ class DebateSession(DebateState):
         self.debate_id = debate_id
         self.pro_style = pro_style
         self.con_style = con_style
+        self.created_at = db.utcnow()
         self.vote: Optional[str] = None
         self.vote_event = asyncio.Event()
 
@@ -191,6 +194,29 @@ class DebateService:
                         "debate_id": session.debate_id,
                         "data": {"vote": session.vote, "message": vote_text}
                     }
+
+            # Debate finished successfully — persist it so it survives a restart
+            # and shows up in the "past debates" view. The write runs off the
+            # event loop (asyncio.to_thread), and a persistence failure must NOT
+            # sink a debate the user already watched, so it's logged, not raised.
+            try:
+                await asyncio.to_thread(
+                    save_completed_debate,
+                    debate_id=session.debate_id,
+                    topic=session.topic,
+                    pro_style=session.pro_style,
+                    con_style=session.con_style,
+                    transcript=session.transcript,
+                    argument_scores=(
+                        session.argument_scores.model_dump()
+                        if session.argument_scores else None
+                    ),
+                    winner=(session.argument_scores.winner if session.argument_scores else None),
+                    created_at=session.created_at,
+                )
+                logger.info("Debate persisted: id=%s", session.debate_id)
+            except Exception:
+                logger.exception("Failed to persist debate id=%s", session.debate_id)
 
             # Debate finished — the engine's final PhaseChange already moved the
             # session to FINISHED (and emitted the phase_change above).

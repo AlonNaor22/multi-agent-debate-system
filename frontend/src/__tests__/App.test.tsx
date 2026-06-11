@@ -15,6 +15,7 @@ vi.mock('../components/debate', () => ({
     </button>
   ),
   DebateChat: () => <div data-testid="chat">Chat</div>,
+  PastDebates: () => <div data-testid="past">Past</div>,
 }))
 
 // --- WebSocket mock --------------------------------------------------------

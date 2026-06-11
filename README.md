@@ -91,6 +91,10 @@ Every turn re-sends a large, near-identical prompt: the agent's fixed persona **
 
 It's verified at runtime from each response's usage metadata: `DebateAgent` logs the `cache_read` / `cache_creation` token counts per turn (see `_log_cache_usage` in [src/agents/base_agent.py](src/agents/base_agent.py)) — after the opening turn, `cache_read` is non-zero while the uncached input stays small.
 
+### Persistence
+
+Completed debates are saved to a small SQLite database (via SQLAlchemy) so they survive a server restart. The live, in-flight debate still runs from an in-memory session — it holds the audience-vote event and the agent objects, which aren't serialisable — and when it finishes, the topic, full transcript, and scoreboard are written to the DB ([api/db.py](api/db.py), [api/models.py](api/models.py), [api/services/debate_repository.py](api/services/debate_repository.py)). A **Past Debates** view in the React app lists previous debates (`GET /api/debates`) and opens any one in full (`GET /api/debates/{id}`), reusing the same message and scoreboard components as the live view.
+
 ## Features
 
 - **Web UI** — React frontend with chat-style interface
@@ -98,6 +102,7 @@ It's verified at runtime from each response's usage metadata: `DebateAgent` logs
 - **Multiple personality styles** — Passionate, Aggressive, Academic, or Humorous
 - **Audience voting** — Vote on who's winning between rounds
 - **Argument scoring** — Judge scores each individual argument
+- **Past debates** — Completed debates persist to SQLite and can be browsed and reopened
 - **Color-coded speakers** — PRO (green), CON (red), Judge (yellow), Moderator (blue)
 
 ### Personality Styles
@@ -114,13 +119,16 @@ It's verified at runtime from each response's usage metadata: `DebateAgent` logs
 ```
 ├── api/                         # FastAPI backend
 │   ├── main.py                  # API entry point
+│   ├── db.py                    # SQLAlchemy engine/session + table init
+│   ├── models.py                # Debate ORM model (SQLite)
 │   ├── routes/
-│   │   ├── debates.py           # REST endpoints
+│   │   ├── debates.py           # REST endpoints (create + history)
 │   │   └── websocket.py         # WebSocket streaming
 │   ├── schemas/
 │   │   └── debate.py            # Pydantic models
 │   └── services/
-│       └── debate_service.py    # Streaming consumer of the debate engine
+│       ├── debate_service.py    # Streaming consumer of the debate engine
+│       └── debate_repository.py # Read/write persisted debates
 │
 ├── frontend/                    # React app
 │   ├── src/
@@ -149,7 +157,7 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-125 tests covering the debate engine and agents (including prompt caching), the web/streaming layer, prompt styles, config values, and API schemas — all run without hitting the Anthropic API.
+137 tests covering the debate engine and agents (including prompt caching), the web/streaming layer, persistence, prompt styles, config values, and API schemas — all run without hitting the Anthropic API.
 
 ---
 
@@ -174,5 +182,7 @@ python main.py
 | `/` | GET | API root / version info |
 | `/health` | GET | Health check (returns `{"status":"healthy"}`) |
 | `/api/debates` | POST | Create a new debate |
+| `/api/debates` | GET | List completed (persisted) debates |
+| `/api/debates/{id}` | GET | Fetch one completed debate in full (transcript + scores) |
 | `/api/config/styles` | GET | Get available personality styles |
 | `/ws/debates/{id}` | WS | WebSocket for real-time streaming |

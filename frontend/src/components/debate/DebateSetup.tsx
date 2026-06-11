@@ -5,6 +5,8 @@ import type { StyleInfo } from '../../types/debate';
 interface DebateSetupProps {
   onStart: (topic: string, proStyle: string, conStyle: string) => void;
   isLoading: boolean;
+  /** Optional: switch to the "past debates" view. */
+  onViewHistory?: () => void;
 }
 
 const styleIcons: Record<string, string> = {
@@ -14,7 +16,7 @@ const styleIcons: Record<string, string> = {
   humorous: '😄',
 };
 
-export function DebateSetup({ onStart, isLoading }: DebateSetupProps) {
+export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupProps) {
   const { topic, proStyle, conStyle, availableStyles, setTopic, setProStyle, setConStyle, setAvailableStyles } = useDebateStore();
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -45,6 +47,15 @@ export function DebateSetup({ onStart, isLoading }: DebateSetupProps) {
         <p className="text-gray-600">
           Watch AI agents debate any topic with different personalities
         </p>
+        {onViewHistory && (
+          <button
+            type="button"
+            onClick={onViewHistory}
+            className="mt-3 text-sm text-blue-600 hover:text-blue-700 hover:underline"
+          >
+            📜 View past debates
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">

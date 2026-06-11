@@ -22,6 +22,9 @@ async def lifespan(app: FastAPI):
             file=sys.stderr,
         )
         sys.exit(1)
+    # Create the debates table on startup if it isn't there yet (idempotent).
+    from api.db import init_db
+    init_db()
     logger.info("API startup complete")
     yield
     logger.info("API shutdown")

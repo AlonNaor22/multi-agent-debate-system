@@ -6,6 +6,34 @@ from unittest.mock import MagicMock, patch
 from src.scoring import ArgumentScore, DebateScores
 
 
+@pytest.fixture(autouse=True)
+def _test_db(monkeypatch, tmp_path):
+    """Point the persistence layer at a throwaway SQLite file for every test.
+
+    Each test gets its own fresh database (so persistence is exercised for real
+    and stays isolated), and nothing ever touches the app's real ``debates.db``.
+    The DB layer reads ``engine`` / ``SessionLocal`` as module globals, so
+    repointing them here is enough for the app code and the read endpoints.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from api import db
+
+    db_path = tmp_path / "test_debates.db"
+    engine = create_engine(
+        f"sqlite:///{db_path.as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(
+        db, "SessionLocal",
+        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False),
+    )
+    db.init_db()  # reads the patched engine; creates the debates table
+    yield
+    engine.dispose()
+
+
 def sample_scores() -> DebateScores:
     """A fixed DebateScores for tests (PRO avg 8.0, CON avg 6.0, PRO wins)."""
     return DebateScores(

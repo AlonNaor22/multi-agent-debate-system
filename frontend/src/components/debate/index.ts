@@ -4,3 +4,4 @@ export { DebateMessage } from './DebateMessage';
 export { DebateProgress } from './DebateProgress';
 export { VotingModal } from './VotingModal';
 export { Scoreboard } from './Scoreboard';
+export { PastDebates } from './PastDebates';

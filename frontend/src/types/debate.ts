@@ -77,3 +77,21 @@ export interface DebateTranscriptEntry {
   content: string;
   phase: string;
 }
+
+// Persisted debates (GET /api/debates and /api/debates/{id}). Field names are
+// snake_case to match the API payload directly.
+export interface PastDebateSummary {
+  id: string;
+  topic: string;
+  pro_style: string;
+  con_style: string;
+  winner: 'PRO' | 'CON' | 'TIE' | null;
+  message_count: number;
+  created_at: string;
+  completed_at: string;
+}
+
+export interface PastDebateDetail extends PastDebateSummary {
+  transcript: DebateTranscriptEntry[];
+  argument_scores: DebateScores | null;
+}

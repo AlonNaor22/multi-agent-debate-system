@@ -1,5 +1,6 @@
+from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 from src.debate_enums import DebatePhase, Speaker
 
@@ -31,6 +32,32 @@ class StyleInfo(BaseModel):
 
 class StylesResponse(BaseModel):
     styles: list[StyleInfo]
+
+
+class DebateSummary(BaseModel):
+    """A persisted debate as shown in the 'past debates' list.
+
+    Intentionally omits the (potentially large) transcript and scoreboard — the
+    list view only needs the headline facts. ``from_attributes`` lets FastAPI
+    build this straight from the ``Debate`` ORM row, including its
+    ``message_count`` property.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    topic: str
+    pro_style: str
+    con_style: str
+    winner: Optional[str] = None
+    message_count: int
+    created_at: datetime
+    completed_at: datetime
+
+
+class DebateDetail(DebateSummary):
+    """A persisted debate with its full transcript and structured scoreboard."""
+    transcript: list[dict]
+    argument_scores: Optional[dict] = None
 
 
 # WebSocket message types

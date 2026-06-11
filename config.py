@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     available_styles: list[str] = ["passionate", "aggressive", "academic", "humorous"]
     default_pro_style: str = "passionate"
     default_con_style: str = "passionate"
+    # Where completed debates are persisted (see api/db.py). A local SQLite file
+    # by default; override with the DATABASE_URL env var for another backend.
+    database_url: str = "sqlite:///./debates.db"
 
 
 settings = Settings()
@@ -36,3 +39,4 @@ CORS_ORIGINS = settings.cors_origins
 AVAILABLE_STYLES = settings.available_styles
 DEFAULT_PRO_STYLE = settings.default_pro_style
 DEFAULT_CON_STYLE = settings.default_con_style
+DATABASE_URL = settings.database_url

@@ -1,11 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from api.db import get_db
 from api.schemas.debate import (
     DebateCreateRequest,
     DebateCreateResponse,
+    DebateDetail,
+    DebateSummary,
     StylesResponse,
     StyleInfo
 )
+from api.services import debate_repository
 from api.services.debate_service import debate_service
 from config import AVAILABLE_STYLES
 from src.prompts import PRO_STYLES
@@ -59,3 +64,20 @@ async def create_debate(request: DebateCreateRequest):
         pro_style=session.pro_style,
         con_style=session.con_style
     )
+
+
+# Sync endpoints (run in FastAPI's threadpool) backed by the SQLite store. These
+# read finished debates; the live debate streams over the WebSocket.
+@router.get("/debates", response_model=list[DebateSummary])
+def list_debates(db_session: Session = Depends(get_db)):
+    """List previously completed debates, most recently finished first."""
+    return debate_repository.list_debates(db_session)
+
+
+@router.get("/debates/{debate_id}", response_model=DebateDetail)
+def get_debate(debate_id: str, db_session: Session = Depends(get_db)):
+    """Return one previously completed debate in full (transcript + scores)."""
+    debate = debate_repository.get_debate(db_session, debate_id)
+    if debate is None:
+        raise HTTPException(status_code=404, detail="Debate not found")
+    return debate

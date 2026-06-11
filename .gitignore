@@ -6,5 +6,8 @@ output/*.md
 Task 4 Multi-Agent Debate System.md
 TODO.md
 
+# SQLite databases (persisted debates)
+*.db
+
 # Claude Code temporary files
 tmpclaude-*

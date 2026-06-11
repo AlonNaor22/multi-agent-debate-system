@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDebateStore } from './stores/debateStore';
-import { DebateSetup, DebateChat } from './components/debate';
+import { DebateSetup, DebateChat, PastDebates } from './components/debate';
 import type { DebateScores } from './types/debate';
 
 type Vote = 'PRO' | 'CON' | 'TIE';
@@ -22,6 +22,7 @@ function App() {
     setScores,
   } = useDebateStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [view, setView] = useState<'setup' | 'history'>('setup');
   const wsRef = useRef<WebSocket | null>(null);
 
   const handleStart = useCallback(async (topic: string, proStyle: string, conStyle: string) => {
@@ -158,8 +159,14 @@ function App() {
     <div className="min-h-screen bg-gray-100">
       {showChat ? (
         <DebateChat onVote={handleVote} onNewDebate={handleNewDebate} />
+      ) : view === 'history' ? (
+        <PastDebates onBack={() => setView('setup')} />
       ) : (
-        <DebateSetup onStart={handleStart} isLoading={isLoading} />
+        <DebateSetup
+          onStart={handleStart}
+          isLoading={isLoading}
+          onViewHistory={() => setView('history')}
+        />
       )}
     </div>
   );
