@@ -4,6 +4,15 @@
 
 A multi-agent system where AI agents powered by Claude debate any topic. Features a React web UI with real-time streaming, audience voting, and argument scoring.
 
+## Demo
+
+<!-- TODO: record a short clip — start a debate (responses stream in live) →
+     vote between rounds → final scoreboard — export it as docs/demo.gif, and
+     uncomment the image line below. See docs/README.md. -->
+<!-- ![Multi-Agent Debate System demo](docs/demo.gif) -->
+
+> Pro, Con, and a Judge agent debate a topic you choose — responses stream in token-by-token, you vote on who's winning between rounds, and the judge returns a structured scoreboard.
+
 ## Quick Start
 
 ### Prerequisites
