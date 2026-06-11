@@ -1,9 +1,11 @@
+import logging
+
 import anthropic
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
 import config
-from src.agents.base_agent import AgentError
+from src.agents.base_agent import AgentError, _cache_stats
 from conftest import sample_scores
 
 
@@ -18,6 +20,18 @@ def _make_agent(name="Pro", role="arguing FOR", system_prompt="Be persuasive."):
         from src.agents.base_agent import DebateAgent
         agent = DebateAgent(name=name, role=role, system_prompt=system_prompt)
     return agent
+
+
+def _real_prompt_agent(name="Pro", role="arguing FOR the topic", system_prompt="You are the PRO debater."):
+    """Build a DebateAgent with a REAL prompt template (only the LLM mocked).
+
+    The fully-mocked ``_make_agent`` stubs out ``ChatPromptTemplate``, so it
+    can't see the actual prompt structure. This leaves the template real so the
+    ``cache_control`` breakpoints can be asserted on.
+    """
+    with patch("src.agents.base_agent.ChatAnthropic"):
+        from src.agents.base_agent import DebateAgent
+        return DebateAgent(name=name, role=role, system_prompt=system_prompt)
 
 
 async def _aiter(items):
@@ -262,3 +276,121 @@ class TestAscoreArguments:
 
         with pytest.raises(AgentError):
             await agent.ascore_arguments("ctx", "instr")
+
+
+# ---------------------------------------------------------------------------
+# Prompt caching — cache_control breakpoints on the stable prefix
+# ---------------------------------------------------------------------------
+
+class TestPromptCaching:
+    """The persona and the transcript prefix carry Anthropic cache breakpoints;
+    the volatile per-turn instruction (deliberately) does not."""
+
+    def _formatted(self, system_prompt="You are the PRO debater."):
+        """Render the real prompt to concrete messages for inspection."""
+        agent = _real_prompt_agent(system_prompt=system_prompt)
+        return agent.prompt.format_messages(
+            debate_context="[Pro]: AI helps people.\n",
+            instruction="Rebut the Con side.",
+            name="Pro",
+            role="arguing FOR the topic",
+        )
+
+    def test_system_persona_is_cached(self):
+        system_msg, _ = self._formatted("PERSONA TEXT")
+        block = system_msg.content[0]
+        assert block["text"] == "PERSONA TEXT"
+        assert block["cache_control"] == {"type": "ephemeral"}
+
+    def test_transcript_prefix_is_cached(self):
+        _, human_msg = self._formatted()
+        transcript_block = human_msg.content[0]
+        assert transcript_block["cache_control"] == {"type": "ephemeral"}
+        # The growing transcript is templated into the cached block.
+        assert "[Pro]: AI helps people." in transcript_block["text"]
+
+    def test_instruction_is_after_the_breakpoint_and_uncached(self):
+        _, human_msg = self._formatted()
+        instruction_block = human_msg.content[1]
+        assert "cache_control" not in instruction_block
+        # The volatile parts land in the uncached trailing block.
+        assert "Rebut the Con side." in instruction_block["text"]
+        assert "Pro" in instruction_block["text"]
+        assert "arguing FOR the topic" in instruction_block["text"]
+
+    def test_at_most_four_breakpoints(self):
+        # Anthropic allows at most 4 cache_control breakpoints per request; we
+        # use exactly 2 (persona + transcript).
+        messages = self._formatted()
+        breakpoints = [
+            block
+            for msg in messages
+            for block in msg.content
+            if isinstance(block, dict) and "cache_control" in block
+        ]
+        assert len(breakpoints) == 2
+
+
+# ---------------------------------------------------------------------------
+# Cache accounting — reading the counters out of usage metadata
+# ---------------------------------------------------------------------------
+
+class TestCacheStats:
+    def test_none_when_no_usage_metadata(self):
+        assert _cache_stats(None) is None
+        assert _cache_stats(MagicMock()) is None  # mocked LLM in other tests
+
+    def test_extracts_counters_from_usage_metadata(self):
+        usage = {
+            "input_tokens": 40,
+            "output_tokens": 120,
+            "total_tokens": 2160,
+            "input_token_details": {"cache_read": 2000, "cache_creation": 0},
+        }
+        assert _cache_stats(usage) == {
+            "cache_read": 2000,
+            "cache_creation": 0,
+            "uncached_input": 40,
+        }
+
+    def test_missing_details_default_to_zero(self):
+        assert _cache_stats({"input_tokens": 10}) == {
+            "cache_read": 0,
+            "cache_creation": 0,
+            "uncached_input": 10,
+        }
+
+
+class TestCacheUsageLogging:
+    """`respond`/`astream_respond` surface the cache counters so a real run can
+    confirm the prefix is being served from cache."""
+
+    def test_respond_logs_cache_reads(self, caplog):
+        agent = _make_agent(name="Pro")
+        response = MagicMock()
+        response.content = "argued"
+        response.usage_metadata = {
+            "input_tokens": 30,
+            "input_token_details": {"cache_read": 1500, "cache_creation": 0},
+        }
+        agent.chain = MagicMock()
+        agent.chain.invoke.return_value = response
+
+        with caplog.at_level(logging.INFO, logger="src.agents.base_agent"):
+            agent.respond("ctx", "instr")
+
+        assert "Pro prompt cache" in caplog.text
+        assert "read=1500" in caplog.text
+
+    def test_respond_without_usage_metadata_is_silent(self, caplog):
+        agent = _make_agent()
+        response = MagicMock()
+        response.content = "x"
+        response.usage_metadata = None
+        agent.chain = MagicMock()
+        agent.chain.invoke.return_value = response
+
+        with caplog.at_level(logging.INFO, logger="src.agents.base_agent"):
+            agent.respond("ctx", "instr")
+
+        assert "prompt cache" not in caplog.text

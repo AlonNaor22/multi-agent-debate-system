@@ -85,6 +85,12 @@ Introduction → Opening Statements → Rebuttals → Audience Vote → Closing 
 
 Messages stream in real-time like ChatGPT, and you can vote on who's winning mid-debate.
 
+### Prompt Caching
+
+Every turn re-sends a large, near-identical prompt: the agent's fixed persona **plus the entire debate transcript so far**. Rather than pay full price to reprocess that prefix on every call, the system applies [Anthropic prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) — a `cache_control` breakpoint sits after the persona and another after the transcript, with the short, volatile per-turn instruction placed deliberately **after** both. Because the transcript only ever grows by appending, each turn's prefix is an exact extension of the previous one, so from the second turn on Claude serves the cached persona + prior transcript at ~10% of the input-token cost (and with lower latency) instead of reprocessing the whole history.
+
+It's verified at runtime from each response's usage metadata: `DebateAgent` logs the `cache_read` / `cache_creation` token counts per turn (see `_log_cache_usage` in [src/agents/base_agent.py](src/agents/base_agent.py)) — after the opening turn, `cache_read` is non-zero while the uncached input stays small.
+
 ## Features
 
 - **Web UI** — React frontend with chat-style interface
@@ -143,7 +149,7 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-42 tests covering the debate controller, prompt styles, config values, and API schemas — all run without hitting the Anthropic API.
+125 tests covering the debate engine and agents (including prompt caching), the web/streaming layer, prompt styles, config values, and API schemas — all run without hitting the Anthropic API.
 
 ---
 

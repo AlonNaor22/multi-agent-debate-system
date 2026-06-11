@@ -1,9 +1,33 @@
-from typing import AsyncGenerator
+import logging
+from typing import AsyncGenerator, Optional
 import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from config import MODEL_NAME, MAX_TOKENS, REQUEST_TIMEOUT, MAX_RETRIES
 from src.scoring import DebateScores
+
+logger = logging.getLogger(__name__)
+
+
+def _cache_stats(usage_metadata) -> Optional[dict[str, int]]:
+    """Pull the prompt-cache counters out of a response's usage metadata.
+
+    LangChain normalises Anthropic's ``cache_read_input_tokens`` /
+    ``cache_creation_input_tokens`` into ``usage_metadata['input_token_details']``
+    under the keys ``cache_read`` / ``cache_creation``. This returns just those
+    two counters plus the uncached ``input_tokens`` (the prefix paid for at full
+    price), or ``None`` when no usage metadata is present — e.g. the mocked LLM
+    in the tests. Kept pure and side-effect free so the cache accounting can be
+    asserted on directly.
+    """
+    if not isinstance(usage_metadata, dict):
+        return None
+    details = usage_metadata.get("input_token_details") or {}
+    return {
+        "cache_read": details.get("cache_read") or 0,
+        "cache_creation": details.get("cache_creation") or 0,
+        "uncached_input": usage_metadata.get("input_tokens") or 0,
+    }
 
 
 class AgentError(RuntimeError):
@@ -42,18 +66,49 @@ class DebateAgent:
             # before surfacing an error. Tunable via config / env.
             timeout=REQUEST_TIMEOUT,
             max_retries=MAX_RETRIES,
+            # Emit token usage (incl. prompt-cache read/write counts) on the
+            # streamed response too, not just the non-streaming one — that's how
+            # we confirm caching is actually serving the prefix (see README).
+            stream_usage=True,
         )
 
         # 2. THE PROMPT TEMPLATE - This defines HOW the agent thinks.
         #    The system message gives the agent its persona/personality.
         #    The human message provides context and instructions each turn.
+        #
+        #    Prompt caching: the persona never changes, and the transcript only
+        #    ever grows by appending — so every turn re-sends a large,
+        #    byte-identical prefix (persona + the debate so far) followed by a
+        #    short, volatile instruction. We drop an Anthropic `cache_control`
+        #    breakpoint after the persona and another after the transcript, and
+        #    keep the per-turn instruction AFTER both. Each later turn then
+        #    re-reads that cached prefix at ~10% of the input price instead of
+        #    paying full freight to resend the whole history. `cache_control`
+        #    rides on the content block; langchain-anthropic forwards it to the
+        #    API. See README -> "Prompt caching".
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", (
-                "Current debate transcript:\n{debate_context}\n\n"
-                "Your instruction for this turn:\n{instruction}\n\n"
-                "Respond in character as {name}, the {role} in this debate."
-            ))
+            ("system", [{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }]),
+            ("human", [
+                {
+                    # Stable, append-only prefix — cached up to this breakpoint.
+                    "type": "text",
+                    "text": "Current debate transcript:\n{debate_context}",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    # Volatile per-turn instruction, deliberately placed AFTER the
+                    # breakpoint so it never invalidates the cached prefix above.
+                    "type": "text",
+                    "text": (
+                        "Your instruction for this turn:\n{instruction}\n\n"
+                        "Respond in character as {name}, the {role} in this debate."
+                    ),
+                },
+            ]),
         ])
 
         # 3. THE CHAIN - This connects the prompt template to the LLM.
@@ -61,6 +116,26 @@ class DebateAgent:
         #    "Take the output of the left side and feed it to the right side"
         #    So: filled prompt template -> sent to Claude -> response
         self.chain = self.prompt | self.llm
+
+    def _log_cache_usage(self, usage_metadata) -> None:
+        """Log the prompt-cache read/write counts from a response's usage.
+
+        This is the verification hook for the caching above: from the second
+        turn on, ``read`` should be non-zero (the persona + prior transcript
+        served from cache) while ``uncached_input`` stays small (only the new
+        turn is paid for in full). A no-op when usage metadata is absent, so a
+        mocked LLM never trips it.
+        """
+        stats = _cache_stats(usage_metadata)
+        if stats is None:
+            return
+        logger.info(
+            "%s prompt cache: read=%d created=%d uncached_input=%d tokens",
+            self.name,
+            stats["cache_read"],
+            stats["cache_creation"],
+            stats["uncached_input"],
+        )
 
     def respond(self, debate_context: str, instruction: str) -> str:
         """Generate a response given the current debate state.
@@ -84,6 +159,7 @@ class DebateAgent:
                 f"The AI service was unavailable while {self.name} was responding."
             ) from e
 
+        self._log_cache_usage(getattr(response, "usage_metadata", None))
         return response.content
 
     async def astream_respond(self, debate_context: str, instruction: str) -> AsyncGenerator[str, None]:
@@ -95,6 +171,7 @@ class DebateAgent:
         Anthropic API fails mid-stream, so the web layer can emit a clean error
         event instead of a raw traceback.
         """
+        aggregate = None
         try:
             async for chunk in self.chain.astream({
                 "debate_context": debate_context,
@@ -102,12 +179,18 @@ class DebateAgent:
                 "name": self.name,
                 "role": self.role
             }):
+                # Accumulate the chunks so the usage metadata — which Anthropic
+                # sends incrementally across the stream — can be read out as a
+                # whole once the stream finishes.
+                aggregate = chunk if aggregate is None else aggregate + chunk
                 if chunk.content:
                     yield chunk.content
         except anthropic.AnthropicError as e:
             raise AgentError(
                 f"The AI service was unavailable while {self.name} was responding."
             ) from e
+
+        self._log_cache_usage(getattr(aggregate, "usage_metadata", None))
 
     def score_arguments(self, debate_context: str, instruction: str) -> DebateScores:
         """Score the debate's arguments as structured data (synchronous; CLI).
