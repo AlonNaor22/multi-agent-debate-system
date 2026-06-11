@@ -1,4 +1,5 @@
 import type { DebatePhase } from '../../types/debate';
+import { strings } from '../../constants/strings';
 
 interface DebateProgressProps {
   phase: DebatePhase | null;
@@ -24,12 +25,12 @@ export function DebateProgress({ phase }: DebateProgressProps) {
 
   // Simplified phase display
   const displayPhases = [
-    { label: 'Introduction', completed: currentIndex >= 0 },
-    { label: 'Openings', completed: currentIndex >= 2 },
-    { label: 'Rebuttals', completed: currentIndex >= 3 },
-    { label: 'Closings', completed: currentIndex >= 5 },
-    { label: 'Verdict', completed: currentIndex >= 6 },
-    { label: 'Scoring', completed: currentIndex >= 7 },
+    { label: strings.progress.introduction, completed: currentIndex >= 0 },
+    { label: strings.progress.openings, completed: currentIndex >= 2 },
+    { label: strings.progress.rebuttals, completed: currentIndex >= 3 },
+    { label: strings.progress.closings, completed: currentIndex >= 5 },
+    { label: strings.progress.verdict, completed: currentIndex >= 6 },
+    { label: strings.progress.scoring, completed: currentIndex >= 7 },
   ];
 
   const activePhaseIndex = displayPhases.findIndex((p, i) =>

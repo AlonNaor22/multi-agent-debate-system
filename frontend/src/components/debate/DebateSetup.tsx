@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDebateStore } from '../../stores/debateStore';
+import { strings } from '../../constants/strings';
 import type { StyleInfo } from '../../types/debate';
 
 interface DebateSetupProps {
@@ -31,7 +32,7 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!topic.trim()) {
-      setLocalError('Please enter a debate topic');
+      setLocalError(strings.setup.topicRequired);
       return;
     }
     setLocalError(null);
@@ -42,10 +43,10 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
     <div className="max-w-4xl mx-auto p-6">
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold text-gray-800 mb-2">
-          Multi-Agent Debate System
+          {strings.setup.title}
         </h1>
         <p className="text-gray-600">
-          Watch AI agents debate any topic with different personalities
+          {strings.setup.tagline}
         </p>
         {onViewHistory && (
           <button
@@ -53,7 +54,7 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
             onClick={onViewHistory}
             className="mt-3 text-sm text-blue-600 hover:text-blue-700 hover:underline"
           >
-            📜 View past debates
+            {strings.setup.viewPastDebates}
           </button>
         )}
       </div>
@@ -62,14 +63,14 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
         {/* Topic Input */}
         <div className="bg-white rounded-xl shadow-lg p-6">
           <label htmlFor="topic" className="block text-lg font-semibold text-gray-700 mb-3">
-            Debate Topic
+            {strings.setup.topicLabel}
           </label>
           <input
             id="topic"
             type="text"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g., Should artificial intelligence be regulated by governments?"
+            placeholder={strings.setup.topicPlaceholder}
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-lg"
             disabled={isLoading}
           />
@@ -84,7 +85,7 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h3 className="text-lg font-semibold text-green-600 mb-4 flex items-center gap-2">
               <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-              PRO Agent Style
+              {strings.setup.proStyleHeading}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {availableStyles.map((style: StyleInfo) => (
@@ -104,7 +105,7 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h3 className="text-lg font-semibold text-red-600 mb-4 flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-              CON Agent Style
+              {strings.setup.conStyleHeading}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {availableStyles.map((style: StyleInfo) => (
@@ -140,10 +141,10 @@ export function DebateSetup({ onStart, isLoading, onViewHistory }: DebateSetupPr
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Starting Debate...
+                {strings.setup.startingDebate}
               </span>
             ) : (
-              'Start Debate'
+              strings.setup.startDebate
             )}
           </button>
         </div>

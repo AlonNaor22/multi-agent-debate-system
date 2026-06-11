@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Speaker, Vote } from '../../types/debate';
 import { useDebateStore } from '../../stores/debateStore';
+import { strings } from '../../constants/strings';
 import { DebateMessage } from './DebateMessage';
 import { DebateProgress } from './DebateProgress';
 import { VotingModal } from './VotingModal';
@@ -46,7 +47,7 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
               <span className="px-2 py-1 bg-green-100 text-green-700 rounded font-medium capitalize">
                 PRO: {proStyle}
               </span>
-              <span className="text-gray-400">vs</span>
+              <span className="text-gray-400">{strings.common.versus}</span>
               <span className="px-2 py-1 bg-red-100 text-red-700 rounded font-medium capitalize">
                 CON: {conStyle}
               </span>
@@ -86,7 +87,7 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
               onClick={onNewDebate}
               className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-colors"
             >
-              Start New Debate
+              {strings.chat.newDebate}
             </button>
           </div>
         </footer>
@@ -109,7 +110,7 @@ function StreamingMessage({ speaker, content }: StreamingMessageProps) {
   return (
     <SpeakerBubble
       speaker={speaker}
-      headerExtra={<span className="text-sm text-gray-500 italic">typing...</span>}
+      headerExtra={<span className="text-sm text-gray-500 italic">{strings.chat.typing}</span>}
     >
       {content || (
         <span className="inline-flex gap-1">

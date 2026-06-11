@@ -1,4 +1,5 @@
 import type { DebateScores, ArgumentScore } from '../../types/debate';
+import { strings } from '../../constants/strings';
 
 // Arguments are scored 1–10 (see ArgumentScore in src/scoring.py).
 const MAX_SCORE = 10;
@@ -35,11 +36,11 @@ function SideColumn({ title, argumentScores, average, headerClass, barColor }: S
     <div className="rounded-lg border border-gray-200 overflow-hidden">
       <div className={`flex items-center justify-between px-3 py-2 font-bold ${headerClass}`}>
         <span>{title}</span>
-        <span className="text-sm font-medium">avg {average}/{MAX_SCORE}</span>
+        <span className="text-sm font-medium">{strings.scoreboard.average} {average}/{MAX_SCORE}</span>
       </div>
       <div className="divide-y divide-gray-100">
         {argumentScores.length === 0 && (
-          <p className="px-3 py-3 text-sm text-gray-400 italic">No arguments scored.</p>
+          <p className="px-3 py-3 text-sm text-gray-400 italic">{strings.scoreboard.noArguments}</p>
         )}
         {argumentScores.map((arg, index) => (
           <div key={index} className="px-3 py-3 space-y-1.5">
@@ -54,12 +55,12 @@ function SideColumn({ title, argumentScores, average, headerClass, barColor }: S
 }
 
 export function Scoreboard({ scores }: ScoreboardProps) {
-  const winnerLabel = scores.winner === 'TIE' ? "It's a tie" : `${scores.winner} wins`;
+  const winnerLabel = scores.winner === 'TIE' ? strings.scoreboard.tie : strings.scoreboard.wins(scores.winner);
 
   return (
     <div className="rounded-lg border-2 border-indigo-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-indigo-700">Argument Scores</h2>
+        <h2 className="text-lg font-bold text-indigo-700">{strings.scoreboard.heading}</h2>
         <span className="rounded-full bg-indigo-600 px-3 py-1 text-sm font-bold text-white">
           {winnerLabel}
         </span>
@@ -84,11 +85,11 @@ export function Scoreboard({ scores }: ScoreboardProps) {
 
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <div className="rounded-lg bg-green-50 p-3">
-          <span className="font-semibold text-green-800">Strongest argument: </span>
+          <span className="font-semibold text-green-800">{strings.scoreboard.strongestArgument}</span>
           <span className="text-gray-700">{scores.strongest_argument}</span>
         </div>
         <div className="rounded-lg bg-amber-50 p-3">
-          <span className="font-semibold text-amber-800">Weakest argument: </span>
+          <span className="font-semibold text-amber-800">{strings.scoreboard.weakestArgument}</span>
           <span className="text-gray-700">{scores.weakest_argument}</span>
         </div>
       </div>

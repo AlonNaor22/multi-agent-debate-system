@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDebateStore } from './stores/debateStore';
 import { DebateSetup, DebateChat, PastDebates } from './components/debate';
+import { strings } from './constants/strings';
 import type { DebateScores, DebatePhase, Speaker, WSMessage, Vote } from './types/debate';
 
 function App() {
@@ -40,7 +41,7 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create debate');
+        throw new Error(strings.errors.createDebate);
       }
 
       const data = await response.json();
@@ -61,12 +62,12 @@ function App() {
       };
 
       ws.onerror = () => {
-        setError('WebSocket connection failed');
+        setError(strings.errors.websocket);
         setIsLoading(false);
       };
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : strings.errors.generic);
       setIsLoading(false);
     }
   }, [setError]);
