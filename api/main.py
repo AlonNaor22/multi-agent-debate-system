@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """App startup/shutdown: require an API key, then create the DB schema.
+
+    Refusing to start without ``ANTHROPIC_API_KEY`` fails fast and loud rather
+    than letting the first debate die mid-stream. ``init_db`` is idempotent, so
+    creating the table on every boot is safe.
+    """
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         print(
             "ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file.",
@@ -56,9 +62,11 @@ app.include_router(websocket.router)
 
 @app.get("/")
 async def root():
+    """Service banner pointing at the interactive API docs."""
     return {"message": "Multi-Agent Debate System API", "docs": "/docs"}
 
 
 @app.get("/health")
 async def health():
+    """Liveness probe (used by the Docker healthcheck)."""
     return {"status": "healthy"}

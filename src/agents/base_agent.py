@@ -111,10 +111,8 @@ class DebateAgent:
             ]),
         ])
 
-        # 3. THE CHAIN - This connects the prompt template to the LLM.
-        #    The "|" operator (pipe) is LangChain's way of saying:
-        #    "Take the output of the left side and feed it to the right side"
-        #    So: filled prompt template -> sent to Claude -> response
+        # 3. THE CHAIN - LangChain's pipe (|) wires the filled prompt into the
+        #    LLM: filled template -> Claude -> response.
         self.chain = self.prompt | self.llm
 
     def _log_cache_usage(self, usage_metadata) -> None:
@@ -144,9 +142,7 @@ class DebateAgent:
         own retries are exhausted), so callers never see a raw SDK exception.
         """
 
-        # 4. INVOKE - This runs the chain.
-        #    We pass in the variables that fill the prompt template.
-        #    The chain fills the template, sends it to Claude, returns the response.
+        # 4. INVOKE - fill the template with this turn's variables and call Claude.
         try:
             response = self.chain.invoke({
                 "debate_context": debate_context,

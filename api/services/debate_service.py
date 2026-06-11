@@ -2,9 +2,8 @@ import asyncio
 import logging
 import uuid
 from typing import AsyncGenerator, Optional
-from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
+from dotenv import load_dotenv
 
 from src.agents.base_agent import DebateAgent, AgentError, build_agents
 from src.debate_engine import (
@@ -22,8 +21,9 @@ from api import db
 from api.services.debate_repository import save_completed_debate
 from api.schemas.debate import Speaker, WSMessageType
 
-# Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # How long to wait for the audience vote before defaulting to a tie.
 VOTE_TIMEOUT_SECONDS = 300
@@ -46,8 +46,6 @@ class DebateSession(DebateState):
         self.created_at = db.utcnow()
         self.vote: Optional[str] = None
         self.vote_event = asyncio.Event()
-
-        # Create agents
         self.pro_agent, self.con_agent, self.judge_agent = build_agents(pro_style, con_style)
 
 
@@ -126,7 +124,6 @@ class DebateService:
         """
         logger.info("Debate started: id=%s", session.debate_id)
 
-        # Yield debate started
         yield {
             "type": WSMessageType.DEBATE_STARTED,
             "debate_id": session.debate_id,
@@ -253,5 +250,6 @@ class DebateService:
             logger.info("Session evicted: id=%s", session.debate_id)
 
 
-# Global instance
+# Module-level singleton: the one in-memory registry of live sessions, shared by
+# the REST and WebSocket routes. Per-process only (see run_debate's finally).
 debate_service = DebateService()
