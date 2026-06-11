@@ -140,12 +140,12 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         messages: [...s.messages, {
           speaker: state.streamingSpeaker!,
           content: state.streamingContent,
-          label: label,
+          label,
           phase: s.phase || 'introduction',
         }],
         streamingContent: '',
         streamingSpeaker: null,
-          isTyping: false,
+        isTyping: false,
         currentSpeaker: null,
       }));
     }

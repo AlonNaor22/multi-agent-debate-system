@@ -1,19 +1,23 @@
 import type { DebateScores, ArgumentScore } from '../../types/debate';
 
+// Arguments are scored 1–10 (see ArgumentScore in src/scoring.py).
+const MAX_SCORE = 10;
+
 interface ScoreboardProps {
   scores: DebateScores;
 }
 
 function ScoreBar({ score, barColor }: { score: number; barColor: string }) {
+  const widthPercent = (Math.max(0, Math.min(MAX_SCORE, score)) / MAX_SCORE) * 100;
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
         <div
           className={`h-full ${barColor} rounded-full transition-all`}
-          style={{ width: `${Math.max(0, Math.min(10, score)) * 10}%` }}
+          style={{ width: `${widthPercent}%` }}
         />
       </div>
-      <span className="w-12 text-right text-sm font-semibold text-gray-700">{score}/10</span>
+      <span className="w-12 text-right text-sm font-semibold text-gray-700">{score}/{MAX_SCORE}</span>
     </div>
   );
 }
@@ -31,7 +35,7 @@ function SideColumn({ title, argumentScores, average, headerClass, barColor }: S
     <div className="rounded-lg border border-gray-200 overflow-hidden">
       <div className={`flex items-center justify-between px-3 py-2 font-bold ${headerClass}`}>
         <span>{title}</span>
-        <span className="text-sm font-medium">avg {average}/10</span>
+        <span className="text-sm font-medium">avg {average}/{MAX_SCORE}</span>
       </div>
       <div className="divide-y divide-gray-100">
         {argumentScores.length === 0 && (

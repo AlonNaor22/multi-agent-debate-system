@@ -52,7 +52,6 @@ function App() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('WebSocket connected');
         setIsLoading(false);
       };
 
@@ -64,10 +63,6 @@ function App() {
       ws.onerror = () => {
         setError('WebSocket connection failed');
         setIsLoading(false);
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket closed');
       };
 
     } catch (err) {
