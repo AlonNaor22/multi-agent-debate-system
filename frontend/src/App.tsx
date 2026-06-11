@@ -24,54 +24,9 @@ function App() {
   const [view, setView] = useState<'setup' | 'history'>('setup');
   const wsRef = useRef<WebSocket | null>(null);
 
-  const handleStart = useCallback(async (topic: string, proStyle: string, conStyle: string) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Create debate via REST API
-      const response = await fetch('/api/debates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          pro_style: proStyle,
-          con_style: conStyle,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(strings.errors.createDebate);
-      }
-
-      const data = await response.json();
-      const newDebateId = data.debate_id;
-
-      // Connect WebSocket
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/debates/${newDebateId}`);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsLoading(false);
-      };
-
-      ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        handleWSMessage(message, topic, proStyle, conStyle);
-      };
-
-      ws.onerror = () => {
-        setError(strings.errors.websocket);
-        setIsLoading(false);
-      };
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : strings.errors.generic);
-      setIsLoading(false);
-    }
-  }, [setError]);
-
+  // Defined before handleStart so it can be a stable dependency of it. Every
+  // dependency below is a Zustand action (stable identity), so this callback
+  // never changes — but listing them keeps react-hooks/exhaustive-deps honest.
   const handleWSMessage = useCallback((
     message: WSMessage,
     topic: string,
@@ -129,6 +84,54 @@ function App() {
         break;
     }
   }, [startDebate, setPhase, startStreaming, appendStreamingChunk, finishStreaming, setIsWaitingForVote, addMessage, setScores, endDebate, setError]);
+
+  const handleStart = useCallback(async (topic: string, proStyle: string, conStyle: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Create debate via REST API
+      const response = await fetch('/api/debates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic,
+          pro_style: proStyle,
+          con_style: conStyle,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(strings.errors.createDebate);
+      }
+
+      const data = await response.json();
+      const newDebateId = data.debate_id;
+
+      // Connect WebSocket
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/debates/${newDebateId}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setIsLoading(false);
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        handleWSMessage(message, topic, proStyle, conStyle);
+      };
+
+      ws.onerror = () => {
+        setError(strings.errors.websocket);
+        setIsLoading(false);
+      };
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : strings.errors.generic);
+      setIsLoading(false);
+    }
+  }, [setError, handleWSMessage]);
 
   const handleVote = useCallback((vote: Vote) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
