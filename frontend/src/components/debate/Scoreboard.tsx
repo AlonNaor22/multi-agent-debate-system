@@ -20,13 +20,13 @@ function ScoreBar({ score, barColor }: { score: number; barColor: string }) {
 
 interface SideColumnProps {
   title: string;
-  args: ArgumentScore[];
+  argumentScores: ArgumentScore[];
   average: number;
   headerClass: string;
   barColor: string;
 }
 
-function SideColumn({ title, args, average, headerClass, barColor }: SideColumnProps) {
+function SideColumn({ title, argumentScores, average, headerClass, barColor }: SideColumnProps) {
   return (
     <div className="rounded-lg border border-gray-200 overflow-hidden">
       <div className={`flex items-center justify-between px-3 py-2 font-bold ${headerClass}`}>
@@ -34,10 +34,10 @@ function SideColumn({ title, args, average, headerClass, barColor }: SideColumnP
         <span className="text-sm font-medium">avg {average}/10</span>
       </div>
       <div className="divide-y divide-gray-100">
-        {args.length === 0 && (
+        {argumentScores.length === 0 && (
           <p className="px-3 py-3 text-sm text-gray-400 italic">No arguments scored.</p>
         )}
-        {args.map((arg, index) => (
+        {argumentScores.map((arg, index) => (
           <div key={index} className="px-3 py-3 space-y-1.5">
             <p className="text-sm font-medium text-gray-800">{arg.summary}</p>
             <ScoreBar score={arg.score} barColor={barColor} />
@@ -64,14 +64,14 @@ export function Scoreboard({ scores }: ScoreboardProps) {
       <div className="grid gap-4 md:grid-cols-2">
         <SideColumn
           title="PRO"
-          args={scores.pro_arguments}
+          argumentScores={scores.pro_arguments}
           average={scores.pro_average}
           headerClass="bg-green-100 text-green-800"
           barColor="bg-green-500"
         />
         <SideColumn
           title="CON"
-          args={scores.con_arguments}
+          argumentScores={scores.con_arguments}
           average={scores.con_average}
           headerClass="bg-red-100 text-red-800"
           barColor="bg-red-500"

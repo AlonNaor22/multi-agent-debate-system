@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDebateStore } from './stores/debateStore';
 import { DebateSetup, DebateChat, PastDebates } from './components/debate';
-import type { DebateScores } from './types/debate';
+import type { DebateScores, DebatePhase, Speaker, WSMessage } from './types/debate';
 
 type Vote = 'PRO' | 'CON' | 'TIE';
 
@@ -79,7 +79,7 @@ function App() {
   }, [setError]);
 
   const handleWSMessage = useCallback((
-    message: { type: string; debate_id: string; data: Record<string, unknown> },
+    message: WSMessage,
     topic: string,
     proStyle: string,
     conStyle: string
@@ -92,11 +92,11 @@ function App() {
         break;
 
       case 'phase_change':
-        setPhase(data.phase as 'introduction' | 'opening_pro' | 'opening_con' | 'rebuttal' | 'closing_pro' | 'closing_con' | 'verdict' | 'scoring' | 'finished');
+        setPhase(data.phase as DebatePhase);
         break;
 
       case 'message_start':
-        startStreaming(data.speaker as 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING');
+        startStreaming(data.speaker as Speaker);
         break;
 
       case 'message_chunk':

@@ -14,9 +14,9 @@ interface PastDebatesProps {
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString(undefined, {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -148,26 +148,26 @@ export function PastDebates({ onBack }: PastDebatesProps) {
 
       {debates && debates.length > 0 && (
         <ul className="space-y-3">
-          {debates.map((d) => (
-            <li key={d.id}>
+          {debates.map((debate) => (
+            <li key={debate.id}>
               <button
-                onClick={() => openDetail(d.id)}
+                onClick={() => openDetail(debate.id)}
                 disabled={loadingDetail}
                 className="w-full text-left bg-white rounded-xl shadow-sm border p-4 hover:border-blue-300 hover:shadow transition-all disabled:opacity-60"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <h2 className="font-semibold text-gray-800">{d.topic}</h2>
-                  <WinnerTag winner={d.winner} />
+                  <h2 className="font-semibold text-gray-800">{debate.topic}</h2>
+                  <WinnerTag winner={debate.winner} />
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                   <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded capitalize">
-                    PRO: {d.pro_style}
+                    PRO: {debate.pro_style}
                   </span>
                   <span className="px-2 py-0.5 bg-red-50 text-red-700 rounded capitalize">
-                    CON: {d.con_style}
+                    CON: {debate.con_style}
                   </span>
-                  <span>· {d.message_count} messages</span>
-                  <span className="ml-auto">{formatDate(d.completed_at)}</span>
+                  <span>· {debate.message_count} messages</span>
+                  <span className="ml-auto">{formatDate(debate.completed_at)}</span>
                 </div>
               </button>
             </li>

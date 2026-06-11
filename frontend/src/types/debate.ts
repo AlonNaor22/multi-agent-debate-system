@@ -40,19 +40,6 @@ export interface DebateScores {
   weakest_argument: string;
 }
 
-export interface DebateConfig {
-  topic: string;
-  proStyle: string;
-  conStyle: string;
-}
-
-export interface DebateSession {
-  debateId: string;
-  topic: string;
-  proStyle: string;
-  conStyle: string;
-}
-
 // WebSocket message types
 export type WSMessageType =
   | 'debate_started'
