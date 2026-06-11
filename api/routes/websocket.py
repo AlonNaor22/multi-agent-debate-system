@@ -4,6 +4,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api.services.debate_service import debate_service
 from api.schemas.debate import WSMessageType
+from messages import DEBATE_SESSION_NOT_FOUND, WS_UNEXPECTED_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ async def debate_websocket(websocket: WebSocket, debate_id: str):
         await websocket.send_json({
             "type": WSMessageType.ERROR.value,
             "debate_id": debate_id,
-            "data": {"message": "Debate session not found"}
+            "data": {"message": DEBATE_SESSION_NOT_FOUND}
         })
         await websocket.close()
         return
@@ -58,5 +59,5 @@ async def debate_websocket(websocket: WebSocket, debate_id: str):
         await websocket.send_json({
             "type": WSMessageType.ERROR.value,
             "debate_id": debate_id,
-            "data": {"message": "An unexpected error occurred. Please try again."}
+            "data": {"message": WS_UNEXPECTED_ERROR}
         })

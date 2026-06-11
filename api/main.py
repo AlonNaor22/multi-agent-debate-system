@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import debates, websocket
+from messages import API_KEY_MISSING
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,10 +24,7 @@ async def lifespan(app: FastAPI):
     creating the table on every boot is safe.
     """
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        print(
-            "ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file.",
-            file=sys.stderr,
-        )
+        print(API_KEY_MISSING, file=sys.stderr)
         sys.exit(1)
     # Create the debates table on startup if it isn't there yet (idempotent).
     from api.db import init_db

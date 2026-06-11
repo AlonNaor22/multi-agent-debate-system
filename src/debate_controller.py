@@ -16,6 +16,19 @@ from src.debate_engine import (
     Score,
     format_audience_vote,
 )
+from messages import (
+    CLI_VOTE_TITLE,
+    CLI_VOTE_PANEL,
+    CLI_VOTE_INPUT,
+    CLI_VOTE_RECORDED,
+    CLI_SCORES_TITLE,
+    CLI_SCORES_COL_SIDE,
+    CLI_SCORES_COL_ARGUMENT,
+    CLI_SCORES_COL_SCORE,
+    CLI_SCORES_COL_REASON,
+    CLI_SCOREBOARD_TITLE,
+    CLI_SCOREBOARD_BODY,
+)
 
 
 class DebateController(DebateState):
@@ -119,22 +132,25 @@ class DebateController(DebateState):
     def _display_scores(self, scores: DebateScores):
         """Render the judge's structured scoreboard as a Rich table."""
         self.console.print()
-        table = Table(title="ARGUMENT SCORES", title_style="bold magenta")
-        table.add_column("Side", style="bold")
-        table.add_column("Argument")
-        table.add_column("Score", justify="right")
-        table.add_column("Reason")
+        table = Table(title=CLI_SCORES_TITLE, title_style="bold magenta")
+        table.add_column(CLI_SCORES_COL_SIDE, style="bold")
+        table.add_column(CLI_SCORES_COL_ARGUMENT)
+        table.add_column(CLI_SCORES_COL_SCORE, justify="right")
+        table.add_column(CLI_SCORES_COL_REASON)
         for arg in scores.pro_arguments:
             table.add_row("PRO", arg.summary, f"{arg.score}/10", arg.reason)
         for arg in scores.con_arguments:
             table.add_row("CON", arg.summary, f"{arg.score}/10", arg.reason)
         self.console.print(table)
         self.console.print(Panel(
-            f"PRO average: {scores.pro_average}/10    CON average: {scores.con_average}/10\n"
-            f"Winner: {scores.winner}\n\n"
-            f"Strongest: {scores.strongest_argument}\n"
-            f"Weakest: {scores.weakest_argument}",
-            title="SCOREBOARD",
+            CLI_SCOREBOARD_BODY.format(
+                pro_average=scores.pro_average,
+                con_average=scores.con_average,
+                winner=scores.winner,
+                strongest=scores.strongest_argument,
+                weakest=scores.weakest_argument,
+            ),
+            title=CLI_SCOREBOARD_TITLE,
             style="magenta",
         ))
 
@@ -142,15 +158,12 @@ class DebateController(DebateState):
         """Prompt the human audience for an interim vote and record it."""
         self.console.print()
         self.console.print(Panel(
-            "Who is winning so far?\n\n"
-            "  1 = PRO is winning\n"
-            "  2 = CON is winning\n"
-            "  3 = It's a tie",
-            title="AUDIENCE VOTE",
+            CLI_VOTE_PANEL,
+            title=CLI_VOTE_TITLE,
             style="cyan"
         ))
-        vote = input("Your vote (1/2/3): ").strip()
+        vote = input(CLI_VOTE_INPUT).strip()
         vote_map = {"1": "PRO", "2": "CON", "3": "TIE"}
         vote_text = format_audience_vote(vote_map.get(vote, "TIE"))
         self.add_to_transcript("AUDIENCE", vote_text)
-        self.console.print(f"  Recorded: {vote_text}\n")
+        self.console.print(CLI_VOTE_RECORDED.format(vote=vote_text))

@@ -20,6 +20,7 @@ from config import NUM_REBUTTAL_ROUNDS
 from api import db
 from api.services.debate_repository import save_completed_debate
 from api.schemas.debate import Speaker, WSMessageType
+from messages import VOTE_PROMPT, AI_SERVICE_UNAVAILABLE
 
 load_dotenv()
 
@@ -174,7 +175,7 @@ class DebateService:
                     yield {
                         "type": WSMessageType.VOTE_REQUIRED,
                         "debate_id": session.debate_id,
-                        "data": {"message": "Who is winning so far?"}
+                        "data": {"message": VOTE_PROMPT}
                     }
 
                     # Wait for vote with timeout
@@ -238,7 +239,7 @@ class DebateService:
             yield {
                 "type": WSMessageType.ERROR,
                 "debate_id": session.debate_id,
-                "data": {"message": "The AI service is temporarily unavailable. Please try again."}
+                "data": {"message": AI_SERVICE_UNAVAILABLE}
             }
 
         finally:
