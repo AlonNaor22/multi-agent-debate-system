@@ -29,6 +29,7 @@ src/
   components/debate/   debate UI components (setup, chat, progress, voting)
   stores/              Zustand store (debate state + streaming actions)
   types/               shared TypeScript interfaces (DebatePhase, Speaker, …)
+  constants/           centralized user-facing UI copy (strings.ts)
   App.tsx              root component — WebSocket connection lives here
   main.tsx             React entry point
 ```

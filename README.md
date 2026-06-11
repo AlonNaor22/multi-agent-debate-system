@@ -231,7 +231,8 @@ Completed debates are saved to a small SQLite database (via SQLAlchemy) so they 
 │   │   ├── App.tsx
 │   │   ├── components/debate/   # UI components
 │   │   ├── stores/              # Zustand state
-│   │   └── types/               # TypeScript types
+│   │   ├── types/               # TypeScript types
+│   │   └── constants/           # Centralized user-facing UI copy
 │   └── package.json
 │
 ├── src/                         # Core debate logic
@@ -245,6 +246,7 @@ Completed debates are saved to a small SQLite database (via SQLAlchemy) so they 
 │
 ├── main.py                      # CLI entry point
 ├── config.py                    # Model settings
+├── messages.py                  # Centralized user-facing copy (CLI + API)
 └── requirements.txt
 ```
 
