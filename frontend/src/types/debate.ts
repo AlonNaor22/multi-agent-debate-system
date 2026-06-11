@@ -11,6 +11,9 @@ export type DebatePhase =
 
 export type Speaker = 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING';
 
+// The audience's interim vote on who is currently winning.
+export type Vote = 'PRO' | 'CON' | 'TIE';
+
 export interface StyleInfo {
   name: string;
   description: string;

@@ -1,5 +1,7 @@
+import type { Vote } from '../../types/debate';
+
 interface VotingModalProps {
-  onVote: (vote: 'PRO' | 'CON' | 'TIE') => void;
+  onVote: (vote: Vote) => void;
 }
 
 export function VotingModal({ onVote }: VotingModalProps) {

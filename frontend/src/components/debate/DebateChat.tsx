@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react';
+import type { Speaker, Vote } from '../../types/debate';
 import { useDebateStore } from '../../stores/debateStore';
 import { DebateMessage } from './DebateMessage';
 import { DebateProgress } from './DebateProgress';
 import { VotingModal } from './VotingModal';
 import { Scoreboard } from './Scoreboard';
+import { SpeakerBubble } from './SpeakerBubble';
 
 interface DebateChatProps {
-  onVote: (vote: 'PRO' | 'CON' | 'TIE') => void;
+  onVote: (vote: Vote) => void;
   onNewDebate: () => void;
 }
 
@@ -96,75 +98,27 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
   );
 }
 
-// Streaming message component - shows content as it's being typed
+// Streaming message component - shows content as it's being typed, reusing the
+// shared SpeakerBubble chrome with a "typing…" hint and a blinking cursor.
 interface StreamingMessageProps {
-  speaker: 'PRO' | 'CON' | 'MODERATOR' | 'JUDGE' | 'AUDIENCE' | 'SCORING';
+  speaker: Speaker;
   content: string;
 }
 
-const speakerConfig = {
-  PRO: {
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    badge: 'bg-green-500 text-white',
-  },
-  CON: {
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    badge: 'bg-red-500 text-white',
-  },
-  MODERATOR: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    badge: 'bg-blue-500 text-white',
-  },
-  JUDGE: {
-    bg: 'bg-yellow-50',
-    border: 'border-yellow-300',
-    badge: 'bg-yellow-500 text-white',
-  },
-  AUDIENCE: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    badge: 'bg-purple-500 text-white',
-  },
-  SCORING: {
-    bg: 'bg-indigo-50',
-    border: 'border-indigo-200',
-    badge: 'bg-indigo-500 text-white',
-  },
-};
-
 function StreamingMessage({ speaker, content }: StreamingMessageProps) {
-  const config = speakerConfig[speaker];
-  const isCentered = ['MODERATOR', 'JUDGE', 'AUDIENCE', 'SCORING'].includes(speaker);
-
   return (
-    <div className={`flex ${isCentered ? 'justify-center' : speaker === 'PRO' ? 'justify-start' : 'justify-end'}`}>
-      <div
-        className={`
-          max-w-2xl p-4 rounded-lg border-2
-          ${config.bg} ${config.border}
-          ${isCentered ? 'w-full max-w-3xl' : 'max-w-xl'}
-        `}
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <span className={`px-2 py-1 rounded text-sm font-bold ${config.badge}`}>
-            {speaker}
-          </span>
-          <span className="text-sm text-gray-500 italic">typing...</span>
-        </div>
-        <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
-          {content || (
-            <span className="inline-flex gap-1">
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </span>
-          )}
-          <span className="animate-pulse">|</span>
-        </div>
-      </div>
-    </div>
+    <SpeakerBubble
+      speaker={speaker}
+      headerExtra={<span className="text-sm text-gray-500 italic">typing...</span>}
+    >
+      {content || (
+        <span className="inline-flex gap-1">
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </span>
+      )}
+      <span className="animate-pulse">|</span>
+    </SpeakerBubble>
   );
 }

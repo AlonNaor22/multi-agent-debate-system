@@ -1,9 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDebateStore } from './stores/debateStore';
 import { DebateSetup, DebateChat, PastDebates } from './components/debate';
-import type { DebateScores, DebatePhase, Speaker, WSMessage } from './types/debate';
-
-type Vote = 'PRO' | 'CON' | 'TIE';
+import type { DebateScores, DebatePhase, Speaker, WSMessage, Vote } from './types/debate';
 
 function App() {
   const {
