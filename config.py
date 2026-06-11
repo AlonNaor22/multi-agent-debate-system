@@ -1,5 +1,7 @@
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from typing import Annotated
+
+from pydantic import ConfigDict, field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 
 class Settings(BaseSettings):
@@ -16,13 +18,30 @@ class Settings(BaseSettings):
     # exponential backoff before giving up.
     request_timeout: float = 60.0
     max_retries: int = 2
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
+    # The single source of truth for allowed CORS origins (used by api/main.py):
+    # the Vite dev server, its preview server, and the 127.0.0.1 alias of the dev
+    # server. ``NoDecode`` opts this list out of pydantic-settings' default JSON
+    # parsing so CORS_ORIGINS can be given as a friendly comma-separated string
+    # (split by the validator below) rather than a JSON array.
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:5173",
+    ]
     available_styles: list[str] = ["passionate", "aggressive", "academic", "humorous"]
     default_pro_style: str = "passionate"
     default_con_style: str = "passionate"
     # Where completed debates are persisted (see api/db.py). A local SQLite file
     # by default; override with the DATABASE_URL env var for another backend.
     database_url: str = "sqlite:///./debates.db"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_comma_separated_origins(cls, value: object) -> object:
+        """Accept CORS_ORIGINS as a comma-separated string as well as a list."""
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
 
 settings = Settings()

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import debates, websocket
+from config import CORS_ORIGINS
 from messages import API_KEY_MISSING
 
 logging.basicConfig(
@@ -41,13 +42,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS origins can be overridden via comma-separated CORS_ORIGINS env var
-_default_origins = "http://localhost:5173,http://127.0.0.1:5173"
-cors_origins = os.environ.get("CORS_ORIGINS", _default_origins).split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    # Single source of truth in config.py; override with the CORS_ORIGINS env var
+    # (comma-separated). Was previously read here with a different default.
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
