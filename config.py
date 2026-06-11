@@ -28,19 +28,31 @@ class Settings(BaseSettings):
         "http://localhost:4173",
         "http://127.0.0.1:5173",
     ]
-    available_styles: list[str] = ["passionate", "aggressive", "academic", "humorous"]
+    # NoDecode (as with cors_origins) lets AVAILABLE_STYLES be supplied as a
+    # comma-separated env string rather than a JSON array.
+    available_styles: Annotated[list[str], NoDecode] = [
+        "passionate",
+        "aggressive",
+        "academic",
+        "humorous",
+    ]
     default_pro_style: str = "passionate"
     default_con_style: str = "passionate"
     # Where completed debates are persisted (see api/db.py). A local SQLite file
     # by default; override with the DATABASE_URL env var for another backend.
     database_url: str = "sqlite:///./debates.db"
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "available_styles", mode="before")
     @classmethod
-    def _split_comma_separated_origins(cls, value: object) -> object:
-        """Accept CORS_ORIGINS as a comma-separated string as well as a list."""
+    def _split_comma_separated_list(cls, value: object) -> object:
+        """Accept these list settings as a comma-separated string as well as a list.
+
+        Pairs with their ``NoDecode`` annotations: pydantic-settings would
+        otherwise require a JSON array in the env var and raise on a plain
+        comma-separated string.
+        """
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
 
