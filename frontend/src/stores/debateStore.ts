@@ -102,7 +102,22 @@ export const useDebateStore = create<DebateState>((set, get) => ({
   setCurrentSpeaker: (currentSpeaker) => set({ currentSpeaker }),
   setIsTyping: (isTyping) => set({ isTyping }),
   setIsWaitingForVote: (isWaitingForVote) => set({ isWaitingForVote }),
-  setError: (error) => set({ error }),
+  // Setting an error ends the current turn: clear any dangling streaming/typing
+  // indicator and dismiss the vote modal so a mid-debate failure doesn't leave
+  // the UI frozen. Clearing the error (setError(null)) just wipes the message.
+  setError: (error) =>
+    set(
+      error
+        ? {
+            error,
+            isTyping: false,
+            currentSpeaker: null,
+            streamingContent: '',
+            streamingSpeaker: null,
+            isWaitingForVote: false,
+          }
+        : { error: null }
+    ),
   setScores: (scores) => set({ scores }),
 
   endDebate: () =>

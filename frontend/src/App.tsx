@@ -7,6 +7,7 @@ import type { DebateScores, DebatePhase, Speaker, WSMessage, Vote } from './type
 function App() {
   const {
     isDebating,
+    error,
     reset,
     setError,
     startDebate,
@@ -148,9 +149,11 @@ function App() {
     reset();
   }, [reset]);
 
-  // Show setup page if not debating and phase is not finished
-  // Show chat if debating OR if debate has finished (so user can review)
-  const showChat = isDebating || currentPhase === 'finished';
+  // Show setup page if not debating and phase is not finished.
+  // Show chat if debating, if the debate has finished (so the user can review),
+  // or if an error occurred (so the error banner + "New Debate" reset are shown
+  // instead of silently dropping back to setup and losing the message).
+  const showChat = isDebating || currentPhase === 'finished' || error !== null;
 
   return (
     <div className="min-h-screen bg-gray-100">

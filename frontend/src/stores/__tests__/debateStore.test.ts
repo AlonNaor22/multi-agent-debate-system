@@ -65,6 +65,34 @@ describe('debateStore – streaming', () => {
   })
 })
 
+describe('debateStore – setError', () => {
+  it('surfaces the message and clears any dangling streaming/typing indicator', () => {
+    // Simulate an error arriving mid-stream, while a speaker is "typing".
+    useDebateStore.getState().startStreaming('PRO')
+    useDebateStore.getState().appendStreamingChunk('half a sentence')
+    useDebateStore.getState().setError('The AI service is temporarily unavailable.')
+
+    const s = useDebateStore.getState()
+    expect(s.error).toBe('The AI service is temporarily unavailable.')
+    expect(s.streamingSpeaker).toBeNull()
+    expect(s.streamingContent).toBe('')
+    expect(s.isTyping).toBe(false)
+    expect(s.currentSpeaker).toBeNull()
+  })
+
+  it('dismisses the vote modal when an error arrives during voting', () => {
+    useDebateStore.getState().setIsWaitingForVote(true)
+    useDebateStore.getState().setError('boom')
+    expect(useDebateStore.getState().isWaitingForVote).toBe(false)
+  })
+
+  it('setError(null) clears the message', () => {
+    useDebateStore.getState().setError('boom')
+    useDebateStore.getState().setError(null)
+    expect(useDebateStore.getState().error).toBeNull()
+  })
+})
+
 describe('debateStore – reset', () => {
   it('restores all initial state', () => {
     useDebateStore.getState().startDebate('d3', 'topic', 'aggressive', 'academic')

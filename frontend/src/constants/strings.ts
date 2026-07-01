@@ -29,6 +29,7 @@ export const strings = {
   chat: {
     newDebate: 'Start New Debate',
     typing: 'typing...',
+    errorTitle: 'Something went wrong',
   },
   // The six display steps the progress bar collapses the nine phases into.
   progress: {

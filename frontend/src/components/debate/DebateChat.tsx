@@ -24,6 +24,7 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
     streamingContent,
     streamingSpeaker,
     scores,
+    error,
   } = useDebateStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +58,18 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
         </div>
       </header>
 
+      {/* Error banner — a mid-debate failure is recoverable: surface the message
+          here and (via the footer) always offer a way out. Pinned below the
+          header so it stays visible regardless of scroll position. */}
+      {error && (
+        <div role="alert" className="bg-red-50 border-b border-red-200 p-4">
+          <div className="max-w-4xl mx-auto">
+            <p className="font-semibold text-red-800">{strings.chat.errorTitle}</p>
+            <p className="text-sm text-red-700 mt-1">{error}</p>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <main className="flex-1 overflow-y-auto p-4">
         <div className="max-w-4xl mx-auto space-y-4">
@@ -79,8 +92,9 @@ export function DebateChat({ onVote, onNewDebate }: DebateChatProps) {
         </div>
       </main>
 
-      {/* Footer */}
-      {isFinished && (
+      {/* Footer — offer "New Debate" both when the debate finishes normally and
+          when it errors out, so an error is never a dead-end. */}
+      {(isFinished || error) && (
         <footer className="bg-white border-t p-4">
           <div className="max-w-4xl mx-auto flex justify-center">
             <button
