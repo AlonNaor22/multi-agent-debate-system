@@ -159,6 +159,49 @@ class TestWebSocket:
         # The session was reclaimed by run_debate's cleanup — nothing leaks.
         assert debate_service.get_session(debate_id) is None
 
+    def test_second_connect_to_live_debate_is_rejected(self, client, mock_build_agents):
+        # A second WebSocket for an in-flight debate must be refused (error event
+        # + closed socket) and must never run a second run_debate over the shared
+        # session — the live transcript stays untouched.
+        from api.services.debate_service import debate_service
+
+        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
+            debate_id = client.post("/api/debates", json={
+                "topic": "T", "pro_style": "passionate", "con_style": "passionate",
+            }).json()["debate_id"]
+
+            with client.websocket_connect(f"/ws/debates/{debate_id}") as ws1:
+                # Drive the first connection until it parks at the audience vote —
+                # the debate is now live (started=True, still in the registry).
+                msg = ws1.receive_json()
+                while msg["type"] != "vote_required":
+                    msg = ws1.receive_json()
+
+                live = debate_service.get_session(debate_id)
+                assert live is not None and live.started is True
+                transcript_before = list(live.transcript)
+
+                # A second connect for the same live debate is rejected outright.
+                with client.websocket_connect(f"/ws/debates/{debate_id}") as ws2:
+                    rejected = ws2.receive_json()
+                assert rejected["type"] == "error"
+                assert "already running" in rejected["data"]["message"].lower()
+
+                # The rejected connection never ran run_debate, so the live
+                # transcript is untouched (no interleaved/duplicated appends).
+                assert live.transcript == transcript_before
+
+                # The first debate still finishes cleanly over its own socket.
+                ws1.send_json({"type": "vote", "vote": "PRO"})
+                types = [msg["type"]]
+                while types[-1] not in ("debate_complete", "error"):
+                    types.append(ws1.receive_json()["type"])
+
+        assert types[-1] == "debate_complete"
+        # The single (first) runner evicted the session on completion — no leak,
+        # and no double-eviction from a second runner.
+        assert debate_service.get_session(debate_id) is None
+
     def test_error_path_emits_clean_error_event(self, client, make_mock_agent):
         def factory(pro_style, con_style):
             return make_mock_agent("PRO", fail=True), make_mock_agent("CON"), make_mock_agent("JUDGE")

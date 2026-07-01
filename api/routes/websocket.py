@@ -5,7 +5,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api.services.debate_service import debate_service, VOTE_TIMEOUT_SECONDS
 from api.schemas.debate import WSMessageType
-from messages import DEBATE_SESSION_NOT_FOUND, WS_UNEXPECTED_ERROR
+from messages import (
+    DEBATE_SESSION_NOT_FOUND,
+    DEBATE_ALREADY_RUNNING,
+    WS_UNEXPECTED_ERROR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,23 @@ async def debate_websocket(websocket: WebSocket, debate_id: str):
             "type": WSMessageType.ERROR.value,
             "debate_id": debate_id,
             "data": {"message": DEBATE_SESSION_NOT_FOUND}
+        })
+        await websocket.close()
+        return
+
+    # Refuse a second connection for a debate that is already running. try_start
+    # claims the session atomically (no await between check and set on the
+    # single-threaded loop), so a concurrent connect for the same debate_id can't
+    # drive a second run_debate over the SAME session — which would interleave
+    # transcript appends, race the vote event, and double-persist. The first
+    # runner owns the session; later ones get an error and a closed socket,
+    # leaving the live debate untouched.
+    if not session.try_start():
+        logger.info("Rejected concurrent connect for live debate_id=%s", debate_id)
+        await websocket.send_json({
+            "type": WSMessageType.ERROR.value,
+            "debate_id": debate_id,
+            "data": {"message": DEBATE_ALREADY_RUNNING}
         })
         await websocket.close()
         return

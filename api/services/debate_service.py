@@ -73,6 +73,24 @@ class DebateSession(DebateState):
                 self.pro_style, self.con_style
             )
 
+    def try_start(self) -> bool:
+        """Atomically claim this session for a single ``run_debate`` runner.
+
+        Returns ``True`` for the first caller (which then owns the debate) and
+        ``False`` for any later caller while the session is still live. Because
+        the event loop is single-threaded and this method has no ``await``, the
+        check-and-set can't be interleaved: a second WebSocket connecting for an
+        in-flight ``debate_id`` is reliably rejected before it can drive a
+        concurrent ``run_debate`` over the shared session (which would interleave
+        transcript appends, race the vote event, and double-persist). Setting
+        ``started`` also tells the TTL sweeper this session is now socket-driven,
+        so cleanup passes to ``run_debate``'s ``finally``.
+        """
+        if self.started:
+            return False
+        self.started = True
+        return True
+
 
 class SessionLimitExceeded(Exception):
     """Raised by :meth:`DebateService.create_debate` when the live-session cap
@@ -216,7 +234,10 @@ class DebateService:
         caps the web UI has always used.
         """
         # Mark the session as driven by a socket so the TTL sweeper leaves it
-        # alone — from here on, cleanup is this method's ``finally`` block.
+        # alone — from here on, cleanup is this method's ``finally`` block. The
+        # WebSocket route has already claimed the session atomically via
+        # ``try_start`` (that's what rejects a concurrent second connect); this
+        # idempotent set keeps direct callers (e.g. tests) correct too.
         session.started = True
         logger.info("Debate started: id=%s", session.debate_id)
 
