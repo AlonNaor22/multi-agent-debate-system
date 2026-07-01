@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     # down) every ordinary turn.
     scoring_max_tokens: int = 4096
     num_rebuttal_rounds: int = 2
+    # Live in-memory debate sessions are held per-process (single uvicorn worker —
+    # see api.services.debate_service). Cap how many can exist at once so a flood
+    # of POST /api/debates calls that never open a WebSocket can't exhaust memory;
+    # the create endpoint returns HTTP 429 once this many are live.
+    max_live_sessions: int = 100
+    # A session created via POST but never driven by a WebSocket is an orphan; a
+    # background sweeper evicts orphans whose age exceeds this many seconds. A
+    # live debate (a socket is driving it) is never swept, so this can sit well
+    # below a debate's natural length.
+    session_ttl_seconds: float = 900.0
+    # How often (seconds) the background sweeper wakes to evict expired orphans.
+    session_sweep_interval_seconds: float = 60.0
     # Resilience for the LLM calls (see src/agents/base_agent.py).
     # request_timeout is seconds per request; max_retries is how many times the
     # Anthropic SDK retries transient failures (429 / 5xx / connection) with
@@ -72,6 +84,9 @@ TEMPERATURE_JUDGE = settings.temperature_judge
 MAX_TOKENS = settings.max_tokens
 SCORING_MAX_TOKENS = settings.scoring_max_tokens
 NUM_REBUTTAL_ROUNDS = settings.num_rebuttal_rounds
+MAX_LIVE_SESSIONS = settings.max_live_sessions
+SESSION_TTL_SECONDS = settings.session_ttl_seconds
+SESSION_SWEEP_INTERVAL_SECONDS = settings.session_sweep_interval_seconds
 REQUEST_TIMEOUT = settings.request_timeout
 MAX_RETRIES = settings.max_retries
 CORS_ORIGINS = settings.cors_origins

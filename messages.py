@@ -68,6 +68,7 @@ STYLE_DESCRIPTIONS = {
     "humorous": "Witty with satire, clever analogies, and entertaining delivery",
 }
 INVALID_STYLE = "Invalid {field}. Must be one of: {styles}"
+TOO_MANY_DEBATES = "The server is busy running other debates. Please try again in a moment."
 DEBATE_NOT_FOUND = "Debate not found"
 DEBATE_SESSION_NOT_FOUND = "Debate session not found"
 WS_UNEXPECTED_ERROR = "An unexpected error occurred. Please try again."

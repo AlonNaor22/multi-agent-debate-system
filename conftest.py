@@ -7,6 +7,20 @@ from src.scoring import ArgumentScore, DebateScores
 
 
 @pytest.fixture(autouse=True)
+def _reset_debate_sessions():
+    """Clear the global DebateService registry around every test.
+
+    The REST/WebSocket layer shares one module-level ``debate_service`` singleton;
+    a test that creates a debate without driving it to completion would otherwise
+    leak that session into the next test (and skew the MAX_LIVE_SESSIONS cap).
+    """
+    from api.services.debate_service import debate_service
+    debate_service.sessions.clear()
+    yield
+    debate_service.sessions.clear()
+
+
+@pytest.fixture(autouse=True)
 def _test_db(monkeypatch, tmp_path):
     """Point the persistence layer at a throwaway SQLite file for every test.
 

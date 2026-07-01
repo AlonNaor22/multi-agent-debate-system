@@ -4,12 +4,17 @@ run_debate event generator, with the LLM mocked (see conftest fixtures).
 These are async tests; pytest-asyncio runs them on an event loop (asyncio_mode
 is set to ``auto`` in pytest.ini).
 """
+import asyncio
+from contextlib import suppress
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
 
-from api.services.debate_service import DebateService
+from api import db
+from api.services.debate_service import DebateService, SessionLimitExceeded
 from api.schemas.debate import WSMessageType, DebatePhase
+from config import SESSION_TTL_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +57,122 @@ class TestSessionManagement:
     def test_submit_vote_unknown_id_is_noop(self):
         # Should not raise even when the session doesn't exist.
         DebateService().submit_vote("nope", "PRO")
+
+    def test_create_debate_defers_agent_construction(self, mock_build_agents):
+        # Deferring build_agents out of __init__ is what stops orphan POSTs from
+        # holding open ChatAnthropic clients: no agents until run_debate runs.
+        svc = DebateService()
+        session = svc.create_debate("T", "passionate", "passionate")
+        assert mock_build_agents.call_count == 0
+        assert session.pro_agent is None
+        assert session.con_agent is None
+        assert session.judge_agent is None
+        assert session.started is False
+
+
+# ---------------------------------------------------------------------------
+# Deferred agent construction + started flag (memory-leak fix)
+# ---------------------------------------------------------------------------
+
+class TestDeferredAgents:
+    async def test_run_debate_builds_agents_and_marks_started(self, mock_build_agents):
+        svc = DebateService()
+        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
+            session = svc.create_debate("T", "passionate", "passionate")
+            await _drain(svc, session)
+        # Agents were constructed lazily, exactly once, when the debate ran.
+        assert mock_build_agents.call_count == 1
+        assert session.started is True
+
+
+# ---------------------------------------------------------------------------
+# MAX_LIVE_SESSIONS cap
+# ---------------------------------------------------------------------------
+
+class TestSessionCap:
+    def test_create_beyond_cap_raises(self, mock_build_agents):
+        svc = DebateService()
+        with patch("api.services.debate_service.MAX_LIVE_SESSIONS", 2):
+            svc.create_debate("T", "passionate", "passionate")
+            svc.create_debate("T", "passionate", "passionate")
+            with pytest.raises(SessionLimitExceeded):
+                svc.create_debate("T", "passionate", "passionate")
+        # The rejected session was not stored.
+        assert len(svc.sessions) == 2
+
+    def test_cap_sweeps_expired_orphans_before_rejecting(self, mock_build_agents):
+        # A backlog of expired orphans must not wrongly reject a fresh request:
+        # create_debate sweeps first, freeing room under the cap.
+        svc = DebateService()
+        with patch("api.services.debate_service.MAX_LIVE_SESSIONS", 2):
+            a = svc.create_debate("T", "passionate", "passionate")
+            b = svc.create_debate("T", "passionate", "passionate")
+            # Age both existing sessions past the TTL.
+            old = db.utcnow() - timedelta(seconds=SESSION_TTL_SECONDS + 1)
+            a.created_at = b.created_at = old
+            # At the cap, but the two are reclaimable — this should succeed.
+            fresh = svc.create_debate("T", "passionate", "passionate")
+        assert fresh.debate_id in svc.sessions
+        assert a.debate_id not in svc.sessions
+        assert b.debate_id not in svc.sessions
+        assert len(svc.sessions) == 1
+
+
+# ---------------------------------------------------------------------------
+# TTL sweeper
+# ---------------------------------------------------------------------------
+
+class TestSessionSweeper:
+    def test_orphans_swept_past_ttl(self, mock_build_agents):
+        # Creating N debates without a socket must not retain them past the TTL.
+        svc = DebateService()
+        sessions = [
+            svc.create_debate("T", "passionate", "passionate") for _ in range(5)
+        ]
+        old = db.utcnow() - timedelta(seconds=SESSION_TTL_SECONDS + 1)
+        for s in sessions:
+            s.created_at = old
+
+        evicted = svc.sweep_expired_sessions()
+        assert evicted == 5
+        assert svc.sessions == {}
+
+    def test_fresh_orphans_not_swept(self, mock_build_agents):
+        svc = DebateService()
+        for _ in range(3):
+            svc.create_debate("T", "passionate", "passionate")
+        assert svc.sweep_expired_sessions() == 0
+        assert len(svc.sessions) == 3
+
+    def test_started_session_never_swept_even_when_old(self, mock_build_agents):
+        # A live debate (started by a socket) outlives the TTL — it must NOT be
+        # reclaimed out from under run_debate; its cleanup is run_debate's finally.
+        svc = DebateService()
+        session = svc.create_debate("T", "passionate", "passionate")
+        session.started = True
+        session.created_at = db.utcnow() - timedelta(seconds=SESSION_TTL_SECONDS + 1)
+
+        assert svc.sweep_expired_sessions() == 0
+        assert session.debate_id in svc.sessions
+
+    async def test_sweeper_loop_reclaims_orphans_over_time(self, mock_build_agents):
+        svc = DebateService()
+        session = svc.create_debate("T", "passionate", "passionate")
+        session.created_at = db.utcnow() - timedelta(seconds=SESSION_TTL_SECONDS + 1)
+
+        task = asyncio.create_task(svc.run_session_sweeper(interval=0.01))
+        try:
+            # Give the loop a few ticks to run at least one sweep.
+            for _ in range(50):
+                await asyncio.sleep(0.01)
+                if not svc.sessions:
+                    break
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        assert svc.sessions == {}
 
 
 # ---------------------------------------------------------------------------

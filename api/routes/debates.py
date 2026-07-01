@@ -11,9 +11,9 @@ from api.schemas.debate import (
     StyleInfo
 )
 from api.services import debate_repository
-from api.services.debate_service import debate_service
+from api.services.debate_service import debate_service, SessionLimitExceeded
 from config import AVAILABLE_STYLES
-from messages import STYLE_DESCRIPTIONS, INVALID_STYLE, DEBATE_NOT_FOUND
+from messages import STYLE_DESCRIPTIONS, INVALID_STYLE, TOO_MANY_DEBATES, DEBATE_NOT_FOUND
 
 router = APIRouter(prefix="/api", tags=["debates"])
 
@@ -43,11 +43,16 @@ async def create_debate(request: DebateCreateRequest):
             detail=INVALID_STYLE.format(field="con_style", styles=AVAILABLE_STYLES)
         )
 
-    session = debate_service.create_debate(
-        topic=request.topic,
-        pro_style=request.pro_style,
-        con_style=request.con_style
-    )
+    try:
+        session = debate_service.create_debate(
+            topic=request.topic,
+            pro_style=request.pro_style,
+            con_style=request.con_style
+        )
+    except SessionLimitExceeded:
+        # Too many live sessions right now — back-pressure the client instead of
+        # accepting work that would grow memory without bound.
+        raise HTTPException(status_code=429, detail=TOO_MANY_DEBATES)
 
     return DebateCreateResponse(
         debate_id=session.debate_id,

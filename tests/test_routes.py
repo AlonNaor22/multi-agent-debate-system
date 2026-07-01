@@ -85,6 +85,17 @@ class TestCreateDebate:
         })
         assert resp.status_code == 422
 
+    def test_over_live_session_cap_returns_429(self, client, mock_build_agents):
+        # With the cap set to 1, the first create succeeds and the second — still
+        # live because no socket drove it — is rejected with 429.
+        body = {"topic": "T", "pro_style": "passionate", "con_style": "passionate"}
+        with patch("api.services.debate_service.MAX_LIVE_SESSIONS", 1):
+            first = client.post("/api/debates", json=body)
+            second = client.post("/api/debates", json=body)
+        assert first.status_code == 200
+        assert second.status_code == 429
+        assert second.json()["detail"]
+
 
 # ---------------------------------------------------------------------------
 # WebSocket flow

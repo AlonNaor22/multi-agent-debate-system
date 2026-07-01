@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import debates, websocket
+from api.services.debate_service import debate_service
 from config import CORS_ORIGINS
 from messages import API_KEY_MISSING
 
@@ -18,11 +20,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """App startup/shutdown: require an API key, then create the DB schema.
+    """App startup/shutdown: require an API key, create the DB schema, and run
+    the background session sweeper.
 
     Refusing to start without ``ANTHROPIC_API_KEY`` fails fast and loud rather
     than letting the first debate die mid-stream. ``init_db`` is idempotent, so
-    creating the table on every boot is safe.
+    creating the table on every boot is safe. The sweeper task evicts orphan
+    debate sessions (created via POST but never driven by a WebSocket) once they
+    exceed ``SESSION_TTL_SECONDS``; it's cancelled cleanly on shutdown.
     """
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         print(API_KEY_MISSING, file=sys.stderr)
@@ -30,9 +35,15 @@ async def lifespan(app: FastAPI):
     # Create the debates table on startup if it isn't there yet (idempotent).
     from api.db import init_db
     init_db()
+    sweeper_task = asyncio.create_task(debate_service.run_session_sweeper())
     logger.info("API startup complete")
-    yield
-    logger.info("API shutdown")
+    try:
+        yield
+    finally:
+        sweeper_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper_task
+        logger.info("API shutdown")
 
 
 app = FastAPI(
