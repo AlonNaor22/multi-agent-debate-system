@@ -59,6 +59,9 @@ class TestConfig:
     def test_max_tokens_is_positive(self):
         assert config.MAX_TOKENS > 0
 
+    def test_scoring_max_tokens_has_more_headroom_than_a_single_turn(self):
+        assert config.SCORING_MAX_TOKENS > config.MAX_TOKENS
+
     def test_rebuttal_rounds_at_least_one(self):
         assert config.NUM_REBUTTAL_ROUNDS >= 1
 

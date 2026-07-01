@@ -5,8 +5,24 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
 import config
+from pydantic import ValidationError
 from src.agents.base_agent import AgentError, _cache_stats
+from src.scoring import DebateScores
 from conftest import sample_scores
+
+
+def _truncated_scores_error() -> ValidationError:
+    """A real ValidationError shaped like a max_tokens-truncated judge response.
+
+    Mirrors a bug seen in practice: the judge's structured-output call got cut
+    off mid-JSON after ``pro_arguments``, so ``con_arguments``/``winner``/
+    ``strongest_argument``/``weakest_argument`` were never parsed.
+    """
+    try:
+        DebateScores.model_validate({"pro_arguments": []})
+    except ValidationError as e:
+        return e
+    raise AssertionError("expected DebateScores validation to fail")
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +76,19 @@ class TestDebateAgentConstruct:
     def test_chain_is_built(self):
         agent = _make_agent()
         assert agent.chain is not None
+
+    def test_scoring_llm_gets_its_own_larger_max_tokens(self):
+        """The judge's structured scoreboard needs far more headroom than a
+        single debate turn (see config.SCORING_MAX_TOKENS) — the two LLM
+        instances must not share a max_tokens budget."""
+        with patch("src.agents.base_agent.ChatAnthropic") as mock_llm, \
+             patch("src.agents.base_agent.ChatPromptTemplate"):
+            from src.agents.base_agent import DebateAgent
+            DebateAgent(name="X", role="Y", system_prompt="Z")
+            turn_kwargs, scoring_kwargs = (call.kwargs for call in mock_llm.call_args_list)
+            assert turn_kwargs["max_tokens"] == config.MAX_TOKENS
+            assert scoring_kwargs["max_tokens"] == config.SCORING_MAX_TOKENS
+            assert config.SCORING_MAX_TOKENS > config.MAX_TOKENS
 
     def test_default_temperature_accepted(self):
         with patch("src.agents.base_agent.ChatAnthropic") as mock_llm, \
@@ -258,6 +287,29 @@ class TestScoreArguments:
         with pytest.raises(AgentError):
             agent.score_arguments("ctx", "instr")
 
+    def test_truncated_response_becomes_agent_error(self):
+        """A max_tokens-truncated (schema-invalid) response must not crash the
+        session with a raw pydantic ValidationError — see AgentError handling
+        in api/services/debate_service.py."""
+        chain = MagicMock()
+        chain.invoke.side_effect = _truncated_scores_error()
+        agent = _judge_with_scoring_chain(chain)
+
+        with pytest.raises(AgentError):
+            agent.score_arguments("ctx", "instr")
+
+    def test_uses_scoring_llm_not_turn_llm(self):
+        """Scoring must use the dedicated higher-max_tokens LLM (config.SCORING_MAX_TOKENS),
+        not the turn-generation one — that's the fix for the max_tokens-truncation bug above."""
+        agent = _make_agent(name="Judge", role="judge")
+        agent.llm = MagicMock(name="turn_llm")
+        agent.scoring_llm = MagicMock(name="scoring_llm")
+
+        agent.score_arguments("ctx", "instr")
+
+        agent.scoring_llm.with_structured_output.assert_called_once_with(DebateScores)
+        agent.llm.with_structured_output.assert_not_called()
+
 
 class TestAscoreArguments:
     async def test_returns_structured_scores(self):
@@ -276,6 +328,27 @@ class TestAscoreArguments:
 
         with pytest.raises(AgentError):
             await agent.ascore_arguments("ctx", "instr")
+
+    async def test_truncated_response_becomes_agent_error(self):
+        chain = MagicMock()
+        chain.ainvoke = AsyncMock(side_effect=_truncated_scores_error())
+        agent = _judge_with_scoring_chain(chain)
+
+        with pytest.raises(AgentError):
+            await agent.ascore_arguments("ctx", "instr")
+
+    async def test_uses_scoring_llm_not_turn_llm(self):
+        agent = _make_agent(name="Judge", role="judge")
+        agent.llm = MagicMock(name="turn_llm")
+        agent.scoring_llm = MagicMock(name="scoring_llm")
+        chain = MagicMock()
+        chain.ainvoke = AsyncMock(return_value=sample_scores())
+        agent.prompt.__or__.return_value = chain  # prompt | scoring_llm.with_structured_output(...)
+
+        await agent.ascore_arguments("ctx", "instr")
+
+        agent.scoring_llm.with_structured_output.assert_called_once_with(DebateScores)
+        agent.llm.with_structured_output.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,8 @@ from typing import AsyncGenerator, Optional
 import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
-from config import MODEL_NAME, MAX_TOKENS, REQUEST_TIMEOUT, MAX_RETRIES
+from pydantic import ValidationError
+from config import MODEL_NAME, MAX_TOKENS, SCORING_MAX_TOKENS, REQUEST_TIMEOUT, MAX_RETRIES
 from src.scoring import DebateScores
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,19 @@ class DebateAgent:
             # streamed response too, not just the non-streaming one — that's how
             # we confirm caching is actually serving the prefix (see README).
             stream_usage=True,
+        )
+
+        # 1b. A second LLM instance used only for the judge's structured
+        #     scoreboard (score_arguments/ascore_arguments below). It needs a
+        #     much larger max_tokens than an ordinary debate turn — see
+        #     config.SCORING_MAX_TOKENS — so it's kept separate rather than
+        #     raising max_tokens for every turn.
+        self.scoring_llm = ChatAnthropic(
+            model=MODEL_NAME,
+            temperature=temperature,
+            max_tokens=SCORING_MAX_TOKENS,
+            timeout=REQUEST_TIMEOUT,
+            max_retries=MAX_RETRIES,
         )
 
         # 2. THE PROMPT TEMPLATE - This defines HOW the agent thinks.
@@ -193,9 +207,10 @@ class DebateAgent:
 
         Uses Anthropic structured outputs (LangChain's ``with_structured_output``)
         so the judge returns a typed :class:`DebateScores` instead of free text.
-        Raises :class:`AgentError` if the API fails.
+        Raises :class:`AgentError` if the API fails, or if the model's response
+        doesn't satisfy the schema (e.g. truncated mid-JSON by a max_tokens cutoff).
         """
-        chain = self.prompt | self.llm.with_structured_output(DebateScores)
+        chain = self.prompt | self.scoring_llm.with_structured_output(DebateScores)
         try:
             return chain.invoke({
                 "debate_context": debate_context,
@@ -207,10 +222,14 @@ class DebateAgent:
             raise AgentError(
                 f"The AI service was unavailable while {self.name} was scoring."
             ) from e
+        except ValidationError as e:
+            raise AgentError(
+                f"{self.name} returned an incomplete or malformed score."
+            ) from e
 
     async def ascore_arguments(self, debate_context: str, instruction: str) -> DebateScores:
         """Async counterpart of :meth:`score_arguments` (used by the web service)."""
-        chain = self.prompt | self.llm.with_structured_output(DebateScores)
+        chain = self.prompt | self.scoring_llm.with_structured_output(DebateScores)
         try:
             return await chain.ainvoke({
                 "debate_context": debate_context,
@@ -221,6 +240,10 @@ class DebateAgent:
         except anthropic.AnthropicError as e:
             raise AgentError(
                 f"The AI service was unavailable while {self.name} was scoring."
+            ) from e
+        except ValidationError as e:
+            raise AgentError(
+                f"{self.name} returned an incomplete or malformed score."
             ) from e
 
 

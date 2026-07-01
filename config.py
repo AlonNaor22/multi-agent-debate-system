@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     temperature_debaters: float = 0.7
     temperature_judge: float = 0.3
     max_tokens: int = 1024
+    # The judge's structured scoreboard (src/scoring.py) must score every
+    # argument from both sides in one JSON response, which needs far more
+    # headroom than a single debate turn — a multi-round debate can easily
+    # exceed max_tokens above and get truncated mid-JSON, failing schema
+    # validation. Kept separate so raising it doesn't also inflate (and slow
+    # down) every ordinary turn.
+    scoring_max_tokens: int = 4096
     num_rebuttal_rounds: int = 2
     # Resilience for the LLM calls (see src/agents/base_agent.py).
     # request_timeout is seconds per request; max_retries is how many times the
@@ -63,6 +70,7 @@ MODEL_NAME = settings.model_name
 TEMPERATURE_DEBATERS = settings.temperature_debaters
 TEMPERATURE_JUDGE = settings.temperature_judge
 MAX_TOKENS = settings.max_tokens
+SCORING_MAX_TOKENS = settings.scoring_max_tokens
 NUM_REBUTTAL_ROUNDS = settings.num_rebuttal_rounds
 REQUEST_TIMEOUT = settings.request_timeout
 MAX_RETRIES = settings.max_retries
