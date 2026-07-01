@@ -32,7 +32,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# How long to wait for the audience vote before defaulting to a tie.
+# How long the WebSocket route waits for the audience vote before defaulting to
+# a tie (see api/routes/websocket.py). This is the single authoritative bound on
+# the audience vote; run_debate itself just blocks until the vote is submitted.
 VOTE_TIMEOUT_SECONDS = 300
 
 
@@ -274,11 +276,13 @@ class DebateService:
                         "data": {"message": VOTE_PROMPT}
                     }
 
-                    # Wait for vote with timeout
-                    try:
-                        await asyncio.wait_for(session.vote_event.wait(), timeout=VOTE_TIMEOUT_SECONDS)
-                    except asyncio.TimeoutError:
-                        session.vote = "TIE"
+                    # Block until the audience vote is submitted. The single
+                    # authoritative timeout lives in the WebSocket route
+                    # (VOTE_TIMEOUT_SECONDS): it collects the client's vote — or
+                    # submits TIE when the client stays silent, disconnects, or
+                    # errors — before resuming us, so this wait always unblocks
+                    # promptly and never hangs on a silent client.
+                    await session.vote_event.wait()
 
                     vote_text = format_audience_vote(session.vote)
                     session.add_to_transcript("AUDIENCE", vote_text)

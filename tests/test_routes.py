@@ -132,6 +132,33 @@ class TestWebSocket:
         assert scores["winner"] in ("PRO", "CON", "TIE")
         assert "pro_average" in scores and "con_average" in scores
 
+    def test_silent_client_vote_times_out_to_tie_and_evicts_session(self, client, mock_build_agents):
+        # A client that receives the vote prompt and never votes must not hang
+        # the debate: the route's VOTE_TIMEOUT_SECONDS bound records a TIE, the
+        # debate completes, and the session is fully evicted (no leak). A short
+        # timeout keeps the test fast.
+        from api.services.debate_service import debate_service
+
+        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1), \
+             patch("api.routes.websocket.VOTE_TIMEOUT_SECONDS", 0.1):
+            debate_id = client.post("/api/debates", json={
+                "topic": "T", "pro_style": "passionate", "con_style": "passionate",
+            }).json()["debate_id"]
+
+            with client.websocket_connect(f"/ws/debates/{debate_id}") as ws:
+                # vote=None → connect, receive vote_required, never send a vote.
+                messages = _drive_ws(ws, vote=None)
+
+        types = [m["type"] for m in messages]
+        assert "vote_required" in types
+        assert types[-1] == "debate_complete"
+
+        received = next(m for m in messages if m["type"] == "vote_received")
+        assert received["data"]["vote"] == "TIE"
+
+        # The session was reclaimed by run_debate's cleanup — nothing leaks.
+        assert debate_service.get_session(debate_id) is None
+
     def test_error_path_emits_clean_error_event(self, client, make_mock_agent):
         def factory(pro_style, con_style):
             return make_mock_agent("PRO", fail=True), make_mock_agent("CON"), make_mock_agent("JUDGE")

@@ -1,8 +1,9 @@
+import asyncio
 import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api.services.debate_service import debate_service
+from api.services.debate_service import debate_service, VOTE_TIMEOUT_SECONDS
 from api.schemas.debate import WSMessageType
 from messages import DEBATE_SESSION_NOT_FOUND, WS_UNEXPECTED_ERROR
 
@@ -39,13 +40,29 @@ async def debate_websocket(websocket: WebSocket, debate_id: str):
             }
             await websocket.send_json(event_dict)
 
-            # If vote is required, wait for client response
+            # If a vote is required, wait for the client's response — but never
+            # indefinitely. VOTE_TIMEOUT_SECONDS is the single authoritative
+            # bound on the audience vote (run_debate no longer guards it too); a
+            # client that receives the prompt and then goes silent, disconnects,
+            # or sends garbage defaults to TIE so the debate proceeds and its
+            # session is cleaned up rather than leaking. Every branch below
+            # submits exactly one vote so run_debate always unblocks.
             if event["type"] == WSMessageType.VOTE_REQUIRED:
                 try:
-                    vote_data = await websocket.receive_json()
-                    if vote_data.get("type") == "vote":
-                        raw = vote_data.get("vote", "TIE")
-                        debate_service.submit_vote(debate_id, raw if raw in VALID_VOTES else "TIE")
+                    vote_data = await asyncio.wait_for(
+                        websocket.receive_json(), timeout=VOTE_TIMEOUT_SECONDS
+                    )
+                    raw = (
+                        vote_data.get("vote", "TIE")
+                        if vote_data.get("type") == "vote"
+                        else "TIE"
+                    )
+                    debate_service.submit_vote(debate_id, raw if raw in VALID_VOTES else "TIE")
+                except asyncio.TimeoutError:
+                    logger.info(
+                        "Audience vote timed out for debate_id=%s; recording TIE", debate_id
+                    )
+                    debate_service.submit_vote(debate_id, "TIE")
                 except (WebSocketDisconnect, json.JSONDecodeError):
                     debate_service.submit_vote(debate_id, "TIE")
                 except Exception:

@@ -260,16 +260,40 @@ class TestRunDebateHappyPath:
             await _drain(svc, session)
         assert svc.get_session(session.debate_id) is None
 
-    async def test_vote_timeout_defaults_to_tie(self, mock_build_agents):
+    async def test_run_debate_blocks_for_vote_then_records_it(self, mock_build_agents):
+        # run_debate no longer self-times-out at the audience vote: it blocks
+        # until a vote is submitted, then records it. The single authoritative
+        # timeout now lives in the WebSocket route (which submits TIE on a silent
+        # client — see tests/test_routes.py). Here we prove the block-until-submit
+        # contract directly: without a vote the generator parks and does not
+        # advance; submitting one (TIE, as the route does on timeout) unblocks it.
         svc = DebateService()
-        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1), \
-             patch("api.services.debate_service.VOTE_TIMEOUT_SECONDS", 0.05):
+        with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
             session = svc.create_debate("T", "passionate", "passionate")
-            # vote=None → never submit a vote, so the wait times out.
-            events = await _drain(svc, session, vote=None)
+            gen = svc.run_debate(session)
 
-        received = next(e for e in events if e["type"] == WSMessageType.VOTE_RECEIVED)
-        assert received["data"]["vote"] == "TIE"
+            # Drive the generator up to the vote prompt.
+            async for event in gen:
+                if event["type"] == WSMessageType.VOTE_REQUIRED:
+                    break
+
+            # With no vote submitted, the generator parks on vote_event and does
+            # not advance to VOTE_RECEIVED.
+            advance = asyncio.ensure_future(gen.__anext__())
+            await asyncio.sleep(0.05)
+            assert not advance.done()
+
+            # Submitting the vote unblocks it and the value is recorded verbatim.
+            svc.submit_vote(session.debate_id, "TIE")
+            received = await advance
+            assert received["type"] == WSMessageType.VOTE_RECEIVED
+            assert received["data"]["vote"] == "TIE"
+
+            # Drain the remainder so the session is cleaned up.
+            async for _ in gen:
+                pass
+
+        assert svc.get_session(session.debate_id) is None
 
 
 class TestRunDebateErrorPath:
