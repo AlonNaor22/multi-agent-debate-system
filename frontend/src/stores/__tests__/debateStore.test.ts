@@ -27,13 +27,11 @@ describe('debateStore – startDebate', () => {
 })
 
 describe('debateStore – streaming', () => {
-  it('startStreaming sets speaker, clears content, and marks isTyping', () => {
+  it('startStreaming sets the streaming speaker and clears content', () => {
     useDebateStore.getState().startStreaming('PRO')
     const s = useDebateStore.getState()
     expect(s.streamingSpeaker).toBe('PRO')
     expect(s.streamingContent).toBe('')
-    expect(s.isTyping).toBe(true)
-    expect(s.currentSpeaker).toBe('PRO')
   })
 
   it('appendStreamingChunk accumulates text', () => {
@@ -55,7 +53,6 @@ describe('debateStore – streaming', () => {
     expect(s.messages[0].label).toBe('Opening')
     expect(s.streamingContent).toBe('')
     expect(s.streamingSpeaker).toBeNull()
-    expect(s.isTyping).toBe(false)
   })
 
   it('finishStreaming still finalizes an empty message, so no typing indicator is left dangling', () => {
@@ -69,15 +66,13 @@ describe('debateStore – streaming', () => {
     expect(s.messages[0]).toMatchObject({ speaker: 'CON', content: '', label: 'Rebuttal' })
     expect(s.streamingSpeaker).toBeNull()
     expect(s.streamingContent).toBe('')
-    expect(s.isTyping).toBe(false)
-    expect(s.currentSpeaker).toBeNull()
   })
 
   it('finishStreaming is a no-op when there is no active streaming speaker', () => {
     useDebateStore.getState().finishStreaming('nothing to finish')
     const s = useDebateStore.getState()
     expect(s.messages).toHaveLength(0)
-    expect(s.isTyping).toBe(false)
+    expect(s.streamingSpeaker).toBeNull()
   })
 })
 
@@ -92,8 +87,6 @@ describe('debateStore – setError', () => {
     expect(s.error).toBe('The AI service is temporarily unavailable.')
     expect(s.streamingSpeaker).toBeNull()
     expect(s.streamingContent).toBe('')
-    expect(s.isTyping).toBe(false)
-    expect(s.currentSpeaker).toBeNull()
   })
 
   it('dismisses the vote modal when an error arrives during voting', () => {
@@ -121,8 +114,6 @@ describe('debateStore – connection lost (ws.onclose)', () => {
 
     const s = useDebateStore.getState()
     expect(s.error).toBe(strings.errors.connectionLost)
-    expect(s.isTyping).toBe(false)
-    expect(s.currentSpeaker).toBeNull()
     expect(s.streamingSpeaker).toBeNull()
     expect(s.streamingContent).toBe('')
     expect(s.isWaitingForVote).toBe(false)

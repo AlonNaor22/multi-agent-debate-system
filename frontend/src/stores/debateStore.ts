@@ -14,8 +14,6 @@ interface DebateState {
   messages: DebateMessage[];
   isDebating: boolean;
   isWaitingForVote: boolean;
-  currentSpeaker: Speaker | null;
-  isTyping: boolean;
   error: string | null;
 
   // Final structured scoreboard (set when the judge's scores arrive)
@@ -33,8 +31,6 @@ interface DebateState {
   startDebate: (debateId: string, topic: string, proStyle: string, conStyle: string) => void;
   setPhase: (phase: DebatePhase) => void;
   addMessage: (message: DebateMessage) => void;
-  setCurrentSpeaker: (speaker: Speaker | null) => void;
-  setIsTyping: (isTyping: boolean) => void;
   setIsWaitingForVote: (waiting: boolean) => void;
   setError: (error: string | null) => void;
   setScores: (scores: DebateScores) => void;
@@ -57,8 +53,6 @@ const initialState = {
   messages: [],
   isDebating: false,
   isWaitingForVote: false,
-  currentSpeaker: null,
-  isTyping: false,
   error: null,
   scores: null,
   streamingContent: '',
@@ -93,14 +87,10 @@ export const useDebateStore = create<DebateState>((set, get) => ({
   addMessage: (message) =>
     set((state) => ({
       messages: [...state.messages, message],
-      isTyping: false,
-      currentSpeaker: null,
       streamingContent: '',
       streamingSpeaker: null,
     })),
 
-  setCurrentSpeaker: (currentSpeaker) => set({ currentSpeaker }),
-  setIsTyping: (isTyping) => set({ isTyping }),
   setIsWaitingForVote: (isWaitingForVote) => set({ isWaitingForVote }),
   // Setting an error ends the current turn: clear any dangling streaming/typing
   // indicator and dismiss the vote modal so a mid-debate failure doesn't leave
@@ -110,8 +100,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       error
         ? {
             error,
-            isTyping: false,
-            currentSpeaker: null,
             streamingContent: '',
             streamingSpeaker: null,
             isWaitingForVote: false,
@@ -120,17 +108,16 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     ),
   setScores: (scores) => set({ scores }),
 
+  // phase is left untouched: debate_complete arrives after the final
+  // phase_change to 'finished', and that 'finished' phase is what keeps the
+  // chat (with its "New Debate" button) on screen.
   endDebate: () =>
-    set((state) => ({
+    set({
       isDebating: false,
-      isTyping: false,
-      currentSpeaker: null,
       isWaitingForVote: false,
       streamingContent: '',
       streamingSpeaker: null,
-      // Keep phase as 'finished' so the chat stays visible
-      phase: state.phase === 'finished' ? 'finished' : state.phase,
-    })),
+    }),
 
   reset: () => set(initialState),
 
@@ -139,8 +126,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     set({
       streamingSpeaker: speaker,
       streamingContent: '',
-      isTyping: true,
-      currentSpeaker: speaker,
     }),
 
   appendStreamingChunk: (chunk) =>
@@ -160,8 +145,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       }],
       streamingContent: '',
       streamingSpeaker: null,
-      isTyping: false,
-      currentSpeaker: null,
     }));
   },
 }));

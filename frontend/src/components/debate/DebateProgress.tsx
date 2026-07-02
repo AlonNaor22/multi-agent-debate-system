@@ -5,9 +5,8 @@ interface DebateProgressProps {
   phase: DebatePhase | null;
 }
 
-// The full backend phase sequence, in order. The progress bar collapses these
-// nine phases into the six display steps built in the component below; the
-// `currentIndex` into this array is what drives which steps read as complete.
+// The full backend phase sequence, in order. `currentIndex` into this array
+// drives which display step below is active.
 const phaseOrder: DebatePhase[] = [
   'introduction',
   'opening_pro',
@@ -20,31 +19,39 @@ const phaseOrder: DebatePhase[] = [
   'finished',
 ];
 
+// The six display steps the bar collapses the nine phases into. Each step is
+// active from its startIndex in phaseOrder until the next step begins.
+const displaySteps = [
+  { label: strings.progress.introduction, startIndex: 0 }, // introduction
+  { label: strings.progress.openings, startIndex: 1 },     // opening_pro/_con
+  { label: strings.progress.rebuttals, startIndex: 3 },    // rebuttal (incl. audience vote)
+  { label: strings.progress.closings, startIndex: 4 },     // closing_pro/_con
+  { label: strings.progress.verdict, startIndex: 6 },      // verdict
+  { label: strings.progress.scoring, startIndex: 7 },      // scoring
+];
+
 export function DebateProgress({ phase }: DebateProgressProps) {
   const currentIndex = phase ? phaseOrder.indexOf(phase) : -1;
+  const isFinished = phase === 'finished';
 
-  // Simplified phase display
-  const displayPhases = [
-    { label: strings.progress.introduction, completed: currentIndex >= 0 },
-    { label: strings.progress.openings, completed: currentIndex >= 2 },
-    { label: strings.progress.rebuttals, completed: currentIndex >= 3 },
-    { label: strings.progress.closings, completed: currentIndex >= 5 },
-    { label: strings.progress.verdict, completed: currentIndex >= 6 },
-    { label: strings.progress.scoring, completed: currentIndex >= 7 },
-  ];
-
-  const activePhaseIndex = displayPhases.findIndex((p, i) =>
-    i === displayPhases.length - 1 ? !p.completed : !displayPhases[i + 1].completed && p.completed
-  );
+  // The step the debate is currently in: the last one whose range has started.
+  // None is active before the first phase_change arrives, and none once
+  // finished — at that point every step reads as completed instead.
+  let activeStepIndex = -1;
+  if (!isFinished) {
+    for (let i = 0; i < displaySteps.length; i++) {
+      if (currentIndex >= displaySteps[i].startIndex) activeStepIndex = i;
+    }
+  }
 
   return (
     <div className="flex items-center justify-center gap-2 py-2">
-      {displayPhases.map((p, index) => {
-        const isActive = index === activePhaseIndex || (index === 0 && currentIndex === 0);
-        const isCompleted = p.completed && index < activePhaseIndex;
+      {displaySteps.map((step, index) => {
+        const isActive = index === activeStepIndex;
+        const isCompleted = isFinished || index < activeStepIndex;
 
         return (
-          <div key={p.label} className="flex items-center">
+          <div key={step.label} className="flex items-center">
             <div
               className={`
                 px-3 py-1 rounded-full text-xs font-medium transition-all
@@ -56,9 +63,9 @@ export function DebateProgress({ phase }: DebateProgressProps) {
                 }
               `}
             >
-              {p.label}
+              {step.label}
             </div>
-            {index < displayPhases.length - 1 && (
+            {index < displaySteps.length - 1 && (
               <div className={`w-4 h-0.5 ${isCompleted ? 'bg-green-300' : 'bg-gray-200'}`} />
             )}
           </div>
