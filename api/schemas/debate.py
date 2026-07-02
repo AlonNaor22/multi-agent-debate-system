@@ -5,9 +5,9 @@ the REST shapes for creating and browsing debates, and the typed envelope for
 every event streamed over the WebSocket. The TypeScript counterparts live in
 ``frontend/src/types/debate.ts`` and are kept in sync by hand.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from typing import Optional
 # DebatePhase/Speaker carry no extra fields here, but their values travel in the
 # WebSocket payloads, so they're re-exported as part of this contract surface
@@ -66,6 +66,18 @@ class DebateSummary(BaseModel):
     message_count: int
     created_at: datetime
     completed_at: datetime
+
+    @field_serializer("created_at", "completed_at")
+    def _serialize_utc(self, value: datetime) -> str:
+        """Stamp with a UTC designator.
+
+        ``value`` comes from ``api.db.utcnow()``, which is UTC but stored (and
+        read back) tz-naive since SQLite has no timezone-aware column type.
+        Without an explicit offset, the frontend's `new Date(iso)` parses the
+        bare string as local time instead of UTC, shifting displayed times by
+        the viewer's UTC offset.
+        """
+        return value.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class DebateDetail(DebateSummary):

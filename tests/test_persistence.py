@@ -172,6 +172,19 @@ class TestHistoryRoutes:
         resp = client.get("/api/debates/does-not-exist")
         assert resp.status_code == 404
 
+    def test_timestamps_are_serialized_with_utc_designator(self, client):
+        # created_at/completed_at are stored tz-naive (SQLite has no timezone
+        # column type); the serialized wire value must still carry a UTC
+        # designator or the frontend's `new Date(iso)` parses it as local time.
+        debate_repository.save_completed_debate(**_save_kwargs("r3", topic="TZ check"))
+        item = client.get("/api/debates").json()[0]
+        assert item["created_at"].endswith("Z")
+        assert item["completed_at"].endswith("Z")
+
+        detail = client.get("/api/debates/r3").json()
+        assert detail["created_at"].endswith("Z")
+        assert detail["completed_at"].endswith("Z")
+
     def test_completed_debate_appears_in_history_endpoint(self, client, mock_build_agents):
         # End-to-end: run a debate over the WebSocket, then read it back via REST.
         with patch("api.services.debate_service.NUM_REBUTTAL_ROUNDS", 1):
