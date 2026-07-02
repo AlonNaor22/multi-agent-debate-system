@@ -63,14 +63,21 @@ Go to **http://localhost:5173** in your browser.
 
 ## Docker
 
-Run the full stack (backend + frontend) with one command:
+**First, set up your `.env` file** (skip this if you already created one in [step 2](#2-configure-api-key) above):
+
+```bash
+cp .env.example .env
+# then edit .env and set ANTHROPIC_API_KEY
+```
+
+Then run the full stack (backend + frontend) with one command:
 
 ```bash
 docker compose up --build
 ```
 
 - Open http://localhost:5173 in your browser once both services start.
-- Make sure your .env file exists with ANTHROPIC_API_KEY set before running.
+- `.env` is optional — you can instead export `ANTHROPIC_API_KEY` in your shell before running `docker compose up`. Either way, the backend fails fast with a clear error if the key isn't set.
 - The backend API is available at http://localhost:8000.
 - Persisted debates live in the SQLite database under the `debate-data` volume, so they survive container restarts and rebuilds.
 
