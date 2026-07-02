@@ -1,3 +1,5 @@
+from typing import Iterable
+
 # --- Shared rules that apply to ALL debater styles ---
 DEBATER_RULES = """
 Rules:
@@ -108,6 +110,36 @@ Your characteristics:
 Your goal: Make the opponent's position look ridiculous while making solid points.
 """ + DEBATER_RULES,
 }
+
+
+class StyleConfigError(ValueError):
+    """A configured debater style has no matching prompt.
+
+    ``PRO_STYLES``/``CON_STYLES`` above and ``config.AVAILABLE_STYLES`` are
+    independent — nothing at the type level keeps an env-overridden
+    ``AVAILABLE_STYLES`` in sync with these dicts. Raised by
+    :func:`validate_styles` (startup) and :func:`build_agents`
+    (``src/agents/base_agent.py``, as a runtime backstop).
+    """
+
+
+def validate_styles(available_styles: Iterable[str]) -> None:
+    """Raise :class:`StyleConfigError` if any style has no PRO and CON prompt.
+
+    Call this at startup (CLI and API lifespan) so a misconfigured
+    ``AVAILABLE_STYLES`` fails fast with a clear message instead of only
+    surfacing later as a ``KeyError`` the first time that style is used.
+    """
+    missing = [
+        style for style in available_styles
+        if style not in PRO_STYLES or style not in CON_STYLES
+    ]
+    if missing:
+        raise StyleConfigError(
+            "AVAILABLE_STYLES contains style(s) with no matching prompt in "
+            f"PRO_STYLES/CON_STYLES: {', '.join(missing)}"
+        )
+
 
 # --- Turn instructions (used by both CLI and web service) ---
 # Templates: call .format(topic=...) or .format(round_num=...) where needed.

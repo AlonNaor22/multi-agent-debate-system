@@ -8,8 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import debates, websocket
 from api.services.debate_service import debate_service
-from config import CORS_ORIGINS
-from messages import API_KEY_MISSING
+from config import CORS_ORIGINS, AVAILABLE_STYLES
+from messages import API_KEY_MISSING, STYLE_CONFIG_INVALID
+from src.prompts import validate_styles, StyleConfigError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,17 +21,26 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """App startup/shutdown: require an API key, create the DB schema, and run
-    the background session sweeper.
+    """App startup/shutdown: require an API key, validate the style config,
+    create the DB schema, and run the background session sweeper.
 
     Refusing to start without ``ANTHROPIC_API_KEY`` fails fast and loud rather
-    than letting the first debate die mid-stream. ``init_db`` is idempotent, so
-    creating the table on every boot is safe. The sweeper task evicts orphan
-    debate sessions (created via POST but never driven by a WebSocket) once they
-    exceed ``SESSION_TTL_SECONDS``; it's cancelled cleanly on shutdown.
+    than letting the first debate die mid-stream. Likewise, validating that
+    every ``AVAILABLE_STYLES`` entry has a matching ``PRO_STYLES``/
+    ``CON_STYLES`` prompt here means a misconfigured env override is rejected
+    at boot instead of raising deep inside a live debate. ``init_db`` is
+    idempotent, so creating the table on every boot is safe. The sweeper task
+    evicts orphan debate sessions (created via POST but never driven by a
+    WebSocket) once they exceed ``SESSION_TTL_SECONDS``; it's cancelled
+    cleanly on shutdown.
     """
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         print(API_KEY_MISSING, file=sys.stderr)
+        sys.exit(1)
+    try:
+        validate_styles(AVAILABLE_STYLES)
+    except StyleConfigError as error:
+        print(STYLE_CONFIG_INVALID.format(error=error), file=sys.stderr)
         sys.exit(1)
     # Create the debates table on startup if it isn't there yet (idempotent).
     from api.db import init_db

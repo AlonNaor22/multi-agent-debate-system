@@ -1,5 +1,5 @@
 import pytest
-from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT
+from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT, StyleConfigError, validate_styles
 import config
 
 EXPECTED_STYLES = ["passionate", "aggressive", "academic", "humorous"]
@@ -43,6 +43,26 @@ class TestJudgePrompt:
 
     def test_mentions_neutrality(self):
         assert any(word in JUDGE_AGENT_PROMPT.lower() for word in ["neutral", "impartial", "fair"])
+
+
+class TestValidateStyles:
+    def test_accepts_the_real_available_styles(self):
+        validate_styles(config.AVAILABLE_STYLES)  # must not raise
+
+    def test_accepts_every_configured_style_individually(self):
+        for style in PRO_STYLES:
+            validate_styles([style])
+
+    def test_rejects_a_style_with_no_matching_prompt(self):
+        with pytest.raises(StyleConfigError):
+            validate_styles(["passionate", "sarcastic"])
+
+    def test_error_names_the_missing_style(self):
+        with pytest.raises(StyleConfigError, match="sarcastic"):
+            validate_styles(["sarcastic"])
+
+    def test_empty_list_is_valid(self):
+        validate_styles([])  # must not raise
 
 
 class TestConfig:

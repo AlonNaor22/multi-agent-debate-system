@@ -248,20 +248,39 @@ class DebateAgent:
 
 
 def build_agents(pro_style: str, con_style: str) -> tuple["DebateAgent", "DebateAgent", "DebateAgent"]:
-    """Return (pro_agent, con_agent, judge_agent) configured for a debate."""
-    from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT
+    """Return (pro_agent, con_agent, judge_agent) configured for a debate.
+
+    Raises :class:`~src.prompts.StyleConfigError` (not a bare ``KeyError``) if
+    ``pro_style``/``con_style`` has no matching prompt in ``PRO_STYLES``/
+    ``CON_STYLES`` — a runtime backstop for the startup check in
+    ``src.prompts.validate_styles``.
+    """
+    from src.prompts import PRO_STYLES, CON_STYLES, JUDGE_AGENT_PROMPT, StyleConfigError
     from config import TEMPERATURE_DEBATERS, TEMPERATURE_JUDGE
+
+    try:
+        pro_prompt = PRO_STYLES[pro_style]
+    except KeyError:
+        raise StyleConfigError(
+            f"Unknown pro_style '{pro_style}': no matching PRO_STYLES prompt."
+        ) from None
+    try:
+        con_prompt = CON_STYLES[con_style]
+    except KeyError:
+        raise StyleConfigError(
+            f"Unknown con_style '{con_style}': no matching CON_STYLES prompt."
+        ) from None
 
     pro = DebateAgent(
         name="Pro",
         role="arguing FOR the topic",
-        system_prompt=PRO_STYLES[pro_style],
+        system_prompt=pro_prompt,
         temperature=TEMPERATURE_DEBATERS,
     )
     con = DebateAgent(
         name="Con",
         role="arguing AGAINST the topic",
-        system_prompt=CON_STYLES[con_style],
+        system_prompt=con_prompt,
         temperature=TEMPERATURE_DEBATERS,
     )
     judge = DebateAgent(

@@ -34,6 +34,32 @@ def _drive_ws(ws, *, vote="PRO"):
 
 
 # ---------------------------------------------------------------------------
+# Startup: AVAILABLE_STYLES / PRO_STYLES / CON_STYLES consistency
+# ---------------------------------------------------------------------------
+
+class TestLifespanStyleValidation:
+    """A style config mismatch must fail fast at startup (SystemExit), not
+    surface later as a raw KeyError / 500 mid-request — see the lifespan
+    docstring in api/main.py.
+    """
+
+    async def test_lifespan_exits_when_a_style_has_no_matching_prompt(self, monkeypatch):
+        import api.main as api_main
+
+        monkeypatch.setattr(api_main, "AVAILABLE_STYLES", ["passionate", "sarcastic"])
+        with pytest.raises(SystemExit):
+            async with api_main.lifespan(api_main.app):
+                pytest.fail("lifespan should not yield when style config is invalid")
+
+    async def test_lifespan_starts_when_styles_are_valid(self, monkeypatch):
+        import api.main as api_main
+
+        monkeypatch.setattr(api_main, "AVAILABLE_STYLES", ["passionate", "academic"])
+        async with api_main.lifespan(api_main.app):
+            pass  # reaching here means startup succeeded
+
+
+# ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
 

@@ -11,6 +11,7 @@ messages, transcript content, and internal identifiers / enum values.
 
 # --- Shared (CLI startup and API lifespan) ---
 API_KEY_MISSING = "ERROR: ANTHROPIC_API_KEY is not set. Add it to your .env file."
+STYLE_CONFIG_INVALID = "ERROR: invalid style configuration: {error}"
 
 
 # --- CLI: entry point (main.py) ---

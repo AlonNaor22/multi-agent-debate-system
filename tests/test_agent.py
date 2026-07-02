@@ -196,6 +196,22 @@ class TestBuildAgents:
         assert pro.name == "Pro"
         assert con.name == "Con"
 
+    def test_unknown_pro_style_raises_style_config_error_not_key_error(self):
+        from src.agents.base_agent import build_agents
+        from src.prompts import StyleConfigError
+        with patch("src.agents.base_agent.ChatAnthropic"), \
+             patch("src.agents.base_agent.ChatPromptTemplate"):
+            with pytest.raises(StyleConfigError):
+                build_agents("no-such-style", "passionate")
+
+    def test_unknown_con_style_raises_style_config_error_not_key_error(self):
+        from src.agents.base_agent import build_agents
+        from src.prompts import StyleConfigError
+        with patch("src.agents.base_agent.ChatAnthropic"), \
+             patch("src.agents.base_agent.ChatPromptTemplate"):
+            with pytest.raises(StyleConfigError):
+                build_agents("passionate", "no-such-style")
+
 
 # ---------------------------------------------------------------------------
 # Failure paths — transient API errors become AgentError

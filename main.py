@@ -4,9 +4,11 @@ import json
 from dotenv import load_dotenv
 from src.agents.base_agent import build_agents, AgentError
 from src.debate_controller import DebateController
+from src.prompts import validate_styles, StyleConfigError
 from config import AVAILABLE_STYLES, DEFAULT_PRO_STYLE, DEFAULT_CON_STYLE
 from messages import (
     API_KEY_MISSING,
+    STYLE_CONFIG_INVALID,
     CLI_BANNER,
     CLI_TOPIC_PROMPT,
     DEFAULT_TOPIC,
@@ -33,6 +35,19 @@ def _require_api_key() -> None:
     """Exit early with a clear message if the Anthropic API key isn't set."""
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         print(API_KEY_MISSING)
+        sys.exit(1)
+
+
+def _require_valid_style_config() -> None:
+    """Exit early if AVAILABLE_STYLES has an entry with no matching prompt.
+
+    Catches a misconfigured env override before the user picks a style that
+    would otherwise raise deep inside ``build_agents`` mid-setup.
+    """
+    try:
+        validate_styles(AVAILABLE_STYLES)
+    except StyleConfigError as error:
+        print(STYLE_CONFIG_INVALID.format(error=error))
         sys.exit(1)
 
 
@@ -136,6 +151,7 @@ def _write_json(
 def main():
     """CLI entry point: collect setup, run a full debate, then optionally save it."""
     _require_api_key()
+    _require_valid_style_config()
     topic, pro_style, con_style = _prompt_for_setup()
     controller = _run_debate(topic, pro_style, con_style)
     _offer_to_save(controller, topic, pro_style, con_style)
