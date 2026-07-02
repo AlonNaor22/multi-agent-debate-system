@@ -71,6 +71,7 @@ export const strings = {
   errors: {
     createDebate: 'Failed to create debate',
     websocket: 'WebSocket connection failed',
+    connectionLost: 'Connection to the debate was lost',
     generic: 'An error occurred',
   },
 } as const;

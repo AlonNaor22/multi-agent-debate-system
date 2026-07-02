@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useDebateStore } from '../debateStore'
+import { strings } from '../../constants/strings'
 
 beforeEach(() => {
   useDebateStore.getState().reset()
@@ -57,11 +58,26 @@ describe('debateStore – streaming', () => {
     expect(s.isTyping).toBe(false)
   })
 
-  it('finishStreaming does nothing when content is empty', () => {
+  it('finishStreaming still finalizes an empty message, so no typing indicator is left dangling', () => {
+    useDebateStore.setState({ phase: 'rebuttal' })
     useDebateStore.getState().startStreaming('CON')
-    // no chunks appended
-    useDebateStore.getState().finishStreaming()
-    expect(useDebateStore.getState().messages).toHaveLength(0)
+    // no chunks appended — e.g. the backend streamed a zero-length response
+    useDebateStore.getState().finishStreaming('Rebuttal')
+
+    const s = useDebateStore.getState()
+    expect(s.messages).toHaveLength(1)
+    expect(s.messages[0]).toMatchObject({ speaker: 'CON', content: '', label: 'Rebuttal' })
+    expect(s.streamingSpeaker).toBeNull()
+    expect(s.streamingContent).toBe('')
+    expect(s.isTyping).toBe(false)
+    expect(s.currentSpeaker).toBeNull()
+  })
+
+  it('finishStreaming is a no-op when there is no active streaming speaker', () => {
+    useDebateStore.getState().finishStreaming('nothing to finish')
+    const s = useDebateStore.getState()
+    expect(s.messages).toHaveLength(0)
+    expect(s.isTyping).toBe(false)
   })
 })
 
@@ -90,6 +106,26 @@ describe('debateStore – setError', () => {
     useDebateStore.getState().setError('boom')
     useDebateStore.getState().setError(null)
     expect(useDebateStore.getState().error).toBeNull()
+  })
+})
+
+describe('debateStore – connection lost (ws.onclose)', () => {
+  // App.tsx's ws.onclose handler calls setError with this message whenever
+  // the socket drops before the debate reached the 'finished' phase.
+  it('surfaces a connection-lost error and clears the dangling streaming/typing state', () => {
+    useDebateStore.getState().startStreaming('PRO')
+    useDebateStore.getState().appendStreamingChunk('mid-sentence when the socket drops')
+    useDebateStore.getState().setIsWaitingForVote(true)
+
+    useDebateStore.getState().setError(strings.errors.connectionLost)
+
+    const s = useDebateStore.getState()
+    expect(s.error).toBe(strings.errors.connectionLost)
+    expect(s.isTyping).toBe(false)
+    expect(s.currentSpeaker).toBeNull()
+    expect(s.streamingSpeaker).toBeNull()
+    expect(s.streamingContent).toBe('')
+    expect(s.isWaitingForVote).toBe(false)
   })
 })
 

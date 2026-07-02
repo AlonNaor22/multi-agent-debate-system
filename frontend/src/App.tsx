@@ -119,13 +119,26 @@ function App() {
       };
 
       ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
+        let message: WSMessage;
+        try {
+          message = JSON.parse(event.data);
+        } catch (err) {
+          console.error('Failed to parse WebSocket message', err);
+          return;
+        }
         handleWSMessage(message, topic, proStyle, conStyle);
       };
 
       ws.onerror = () => {
         setError(strings.errors.websocket);
         setIsLoading(false);
+      };
+
+      ws.onclose = () => {
+        if (useDebateStore.getState().phase !== 'finished') {
+          setError(strings.errors.connectionLost);
+          setIsLoading(false);
+        }
       };
 
     } catch (err) {
@@ -143,6 +156,7 @@ function App() {
 
   const handleNewDebate = useCallback(() => {
     if (wsRef.current) {
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
     }

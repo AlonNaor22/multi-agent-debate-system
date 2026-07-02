@@ -117,4 +117,28 @@ describe('App – WebSocket message handling', () => {
     await fireMessage('error', { message: 'Something went wrong' })
     expect(useDebateStore.getState().error).toBe('Something went wrong')
   })
+
+  it('a malformed frame is ignored instead of throwing', async () => {
+    await renderAndStart()
+    await act(async () => { mockWs?.onmessage?.({ data: '{not valid json' }) })
+    // No crash, and no unrelated state was touched.
+    expect(useDebateStore.getState().error).toBeNull()
+  })
+
+  it('ws.onclose surfaces a connection-lost error when the debate has not finished', async () => {
+    await renderAndStart()
+    await fireMessage('debate_started')
+    await fireMessage('phase_change', { phase: 'opening_pro' })
+    await act(async () => { mockWs?.onclose?.() })
+    expect(useDebateStore.getState().error).toBe('Connection to the debate was lost')
+  })
+
+  it('ws.onclose does not surface an error once the debate has finished', async () => {
+    await renderAndStart()
+    await fireMessage('debate_started')
+    await fireMessage('phase_change', { phase: 'finished' })
+    await fireMessage('debate_complete')
+    await act(async () => { mockWs?.onclose?.() })
+    expect(useDebateStore.getState().error).toBeNull()
+  })
 })

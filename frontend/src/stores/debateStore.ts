@@ -150,19 +150,18 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
   finishStreaming: (label) => {
     const state = get();
-    if (state.streamingSpeaker && state.streamingContent) {
-      set((s) => ({
-        messages: [...s.messages, {
-          speaker: state.streamingSpeaker!,
-          content: state.streamingContent,
-          label,
-          phase: s.phase || 'introduction',
-        }],
-        streamingContent: '',
-        streamingSpeaker: null,
-        isTyping: false,
-        currentSpeaker: null,
-      }));
-    }
+    if (!state.streamingSpeaker) return;
+    set((s) => ({
+      messages: [...s.messages, {
+        speaker: state.streamingSpeaker!,
+        content: state.streamingContent,
+        label,
+        phase: s.phase || 'introduction',
+      }],
+      streamingContent: '',
+      streamingSpeaker: null,
+      isTyping: false,
+      currentSpeaker: null,
+    }));
   },
 }));
